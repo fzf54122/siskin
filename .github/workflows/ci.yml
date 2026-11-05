@@ -16,7 +16,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
-        run: rustup show
+        run: |
+          rustup show
+          rustup component add rustfmt clippy
       - name: Install Linux GUI dependencies
         run: |
           sudo apt-get update
