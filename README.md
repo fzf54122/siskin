@@ -14,6 +14,8 @@
   <img src="assets/siskin-256.png" width="128" alt="Siskin 图标">
 </p>
 
+![Siskin 窗口截图](docs/screenshot.png)
+
 ## 这是什么
 
 一个用来验证 `pulse-ui` 能不能撑起「像终端」的界面实验：
