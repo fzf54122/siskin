@@ -6,7 +6,7 @@
 //! Terminal cells. Rendering, wrapping and the command engine all work on the
 //! same span list, so nothing has to re-parse styled text later.
 
-use crate::theme;
+use crate::theme::Palette;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {
@@ -23,18 +23,18 @@ pub enum Role {
 }
 
 impl Role {
-    pub fn color(self) -> u32 {
+    pub fn color(self, palette: &Palette) -> u32 {
         match self {
-            Role::Prompt => theme::PROMPT,
-            Role::Command => theme::COMMAND,
-            Role::Output => theme::OUTPUT,
-            Role::System => theme::SYSTEM,
-            Role::Path => theme::PATH,
-            Role::Ok => theme::OK,
-            Role::Warn => theme::WARN,
-            Role::Error => theme::ERROR,
-            Role::Link => theme::LINK,
-            Role::Faint => theme::FAINT_TEXT,
+            Role::Prompt => palette.prompt,
+            Role::Command => palette.command,
+            Role::Output => palette.output,
+            Role::System => palette.system,
+            Role::Path => palette.path,
+            Role::Ok => palette.ok,
+            Role::Warn => palette.warn,
+            Role::Error => palette.error,
+            Role::Link => palette.link,
+            Role::Faint => palette.faint_text,
         }
     }
 

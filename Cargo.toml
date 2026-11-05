@@ -17,6 +17,14 @@ pulse-ui = { git = "https://github.com/fzf54122/resource-pulse.git", tag = "v0.1
 # Same source and commit as pulse-ui so Cargo unifies both into one gpui build.
 gpui = { git = "https://github.com/zed-industries/zed", rev = "c4273271092b0287f7d181f616bd5171e0a2f70c", default-features = false }
 image = { version = "=0.25.10", default-features = false, features = ["png"] }
+raw-window-handle = "=0.6.2"
+x11rb = { version = "=0.13.2", default-features = false, features = ["allow-unsafe-code"] }
+zbus = { version = "=5.15.0", default-features = false, features = ["async-io", "blocking-api"] }
+zvariant = "=5.15.1"
+async-channel = "=2.5.0"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+tempfile = "=3.27.0"
 
 [dev-dependencies]
 gpui = { git = "https://github.com/zed-industries/zed", rev = "c4273271092b0287f7d181f616bd5171e0a2f70c", default-features = false, features = ["test-support"] }

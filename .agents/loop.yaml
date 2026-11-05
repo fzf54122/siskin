@@ -1,0 +1,29 @@
+# @Time    : 2026/11/4 23:10
+# @Author  : fzf
+# @FileName: loop.yaml
+# @Software: Siskin
+version: 1
+job:
+  name: siskin
+  fail_fast: true
+  max_concurrency: 1
+  default_timeout: 15m
+  tasks:
+    - id: fmt
+      type: shell
+      cmd: "cargo fmt --all --check"
+
+    - id: clippy
+      type: shell
+      depends_on: [fmt]
+      cmd: "cargo clippy --all-targets --locked -- -D warnings"
+
+    - id: test
+      type: shell
+      depends_on: [clippy]
+      cmd: "cargo test --all-targets --locked"
+
+    - id: build
+      type: shell
+      depends_on: [test]
+      cmd: "cargo build --locked"

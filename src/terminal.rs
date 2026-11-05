@@ -47,10 +47,6 @@ impl Terminal {
         &self.input
     }
 
-    pub fn columns(&self) -> usize {
-        self.columns
-    }
-
     pub fn scroll(&self) -> usize {
         self.scroll
     }

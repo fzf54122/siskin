@@ -8,80 +8,52 @@
 
 use crate::{
     line::{Line, Role, Span},
+    settings::{Page, Settings, SettingsSection, ShellKind},
     shell::Shell,
     terminal::Terminal,
     theme,
+    theme::Palette,
 };
 use gpui::{FocusHandle, ScrollHandle, SharedString};
 use pulse_ui::gpui::{Context, point, px};
 
-pub const ROW_HEIGHT: f32 = 20.;
-pub const FONT_SIZE: f32 = 13.;
-/// Advance width of Meslo/DejaVu-style monospace at `FONT_SIZE`, used to count
-/// columns. A couple of pixels of slack keep lines from touching the edge.
-pub const CHAR_WIDTH: f32 = 7.8;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ColorTarget {
+    Accent,
+    Background,
+    Foreground,
+}
+
+pub struct ColorEdit {
+    pub target: ColorTarget,
+    pub draft: String,
+    pub error: Option<String>,
+}
 
 pub struct Session {
     pub title: SharedString,
-    pub role: &'static str,
+    pub kind: ShellKind,
     pub shell: Shell,
     pub terminal: Terminal,
     pub scroll: ScrollHandle,
 }
 
 impl Session {
-    pub fn new(title: impl Into<SharedString>, role: &'static str) -> Self {
+    pub fn new(title: impl Into<SharedString>, kind: ShellKind) -> Self {
+        let title = title.into();
         Self {
-            title: title.into(),
-            role,
+            title,
+            kind,
             shell: Shell::default(),
             terminal: Terminal::default(),
             scroll: ScrollHandle::new(),
         }
     }
 
-    pub fn with_welcome(title: impl Into<SharedString>, role: &'static str) -> Self {
-        let mut session = Self::new(title, role);
-        session.welcome();
-        session
-    }
-
-    /// Builds a session whose scrollback already shows `commands`, the way a
-    /// tab looks when you come back to it. Commands run through the same shell
-    /// as typed input, so the transcript can never drift from real behaviour.
-    pub fn with_transcript(
-        title: impl Into<SharedString>,
-        role: &'static str,
-        commands: &[&str],
-    ) -> Self {
-        let mut session = Self::new(title, role);
-        session.welcome();
-        for command in commands {
-            let prompt = session.prompt_span();
-            session.terminal.push_line(Line::new(vec![
-                prompt,
-                Span::new(" ", Role::Prompt),
-                Span::new(*command, Role::Command),
-            ]));
-            let reply = session.shell.run(command);
-            if reply.clear {
-                session.terminal.clear();
-            }
-            for line in reply.lines {
-                session.terminal.push_line(line);
-            }
-            if !session.terminal.lines().last().is_some_and(Line::is_blank) {
-                session.terminal.push_blank();
-            }
-        }
-        session
-    }
-
     pub fn reset(&mut self) {
         self.shell = Shell::default();
         self.terminal.clear();
         self.terminal.clear_input();
-        self.welcome();
         self.scroll_to_top();
     }
 
@@ -91,32 +63,6 @@ impl Session {
 
     pub fn scroll_to_bottom(&self) {
         self.scroll.scroll_to_bottom();
-    }
-
-    pub fn welcome(&mut self) {
-        let rows = vec![
-            Line::new(vec![
-                Span::new("Siskin ", Role::Command),
-                Span::new("0.1.0", Role::Faint),
-                Span::new(" · simulated terminal", Role::System),
-            ]),
-            Line::text(
-                "真实布局与输入焦点，命令和文件树都是本地固定数据。",
-                Role::Output,
-            ),
-            Line::default(),
-            Line::new(vec![
-                Span::new("输入 ", Role::Output),
-                Span::new("help", Role::Path),
-                Span::new(" 查看命令，或按 ", Role::Output),
-                Span::new("Ctrl K", Role::Path),
-                Span::new(" 打开命令面板。", Role::Output),
-            ]),
-            Line::default(),
-        ];
-        for row in rows {
-            self.terminal.push_line(row);
-        }
     }
 
     pub fn prompt_span(&self) -> Span {
@@ -133,7 +79,13 @@ pub enum PaletteAction {
     PreviousSession,
     Help,
     About,
-    ToggleRail,
+    OpenSettings,
+    OpenTerminal,
+    NextTheme,
+    NextShell,
+    FontLarger,
+    FontSmaller,
+    ToggleInspector,
 }
 
 pub struct PaletteEntry {
@@ -145,7 +97,14 @@ pub struct PaletteEntry {
     pub action: PaletteAction,
 }
 
-const ENTRIES: [PaletteEntry; 8] = [
+const ENTRIES: [PaletteEntry; 14] = [
+    PaletteEntry {
+        label: "切换会话信息",
+        keywords: "inspector panel session information",
+        hint: "显示或收起右侧会话信息",
+        keys: "Ctrl Shift I",
+        action: PaletteAction::ToggleInspector,
+    },
     PaletteEntry {
         label: "清空当前会话",
         keywords: "clear reset scrollback",
@@ -196,21 +155,56 @@ const ENTRIES: [PaletteEntry; 8] = [
         action: PaletteAction::About,
     },
     PaletteEntry {
-        label: "切换右侧信息栏",
-        keywords: "toggle rail inspector panel",
-        hint: "腾出更多终端宽度",
-        keys: "",
-        action: PaletteAction::ToggleRail,
+        label: "打开设置",
+        keywords: "settings preferences theme font",
+        hint: "主题、字体、shell",
+        keys: "Ctrl ,",
+        action: PaletteAction::OpenSettings,
+    },
+    PaletteEntry {
+        label: "回到终端",
+        keywords: "terminal back workspace",
+        hint: "关闭设置页",
+        keys: "Esc",
+        action: PaletteAction::OpenTerminal,
+    },
+    PaletteEntry {
+        label: "切换配色主题",
+        keywords: "theme palette color dark light",
+        hint: "跟随系统 / 浅色 / 深色 / 自定义",
+        keys: "Ctrl Shift T",
+        action: PaletteAction::NextTheme,
+    },
+    PaletteEntry {
+        label: "切换 shell",
+        keywords: "shell zsh bash fish sh",
+        hint: "zsh / bash / fish / sh",
+        keys: "Ctrl Shift S",
+        action: PaletteAction::NextShell,
+    },
+    PaletteEntry {
+        label: "放大字号",
+        keywords: "font bigger larger zoom",
+        hint: "终端等宽字号 +1 档",
+        keys: "Ctrl +",
+        action: PaletteAction::FontLarger,
+    },
+    PaletteEntry {
+        label: "缩小字号",
+        keywords: "font smaller zoom out",
+        hint: "终端等宽字号 -1 档",
+        keys: "Ctrl -",
+        action: PaletteAction::FontSmaller,
     },
 ];
 
 #[derive(Clone, Debug)]
-pub struct Palette {
+pub struct CommandPalette {
     pub query: String,
     pub selected: usize,
 }
 
-impl Palette {
+impl CommandPalette {
     pub fn new() -> Self {
         Self {
             query: String::new(),
@@ -219,7 +213,7 @@ impl Palette {
     }
 }
 
-impl Default for Palette {
+impl Default for CommandPalette {
     fn default() -> Self {
         Self::new()
     }
@@ -230,34 +224,283 @@ pub struct SiskinApp {
     pub active: usize,
     pub focus: FocusHandle,
     pub mono: SharedString,
-    pub palette: Option<Palette>,
-    pub rail: bool,
+    pub ui: SharedString,
+    pub mono_fonts: Vec<String>,
+    pub palette: Option<CommandPalette>,
+    pub settings_section: SettingsSection,
+    pub inspector_open: bool,
+    pub page: Page,
+    pub settings: Settings,
+    /// Updated by GPUI's desktop appearance observer.
+    pub system_dark: bool,
+    /// The exported global menu, when the desktop provides a registrar.
+    pub menu: Option<crate::dbusmenu::GlobalMenu>,
+    pub menu_state: crate::dbusmenu::MenuState,
+    pub color_edit: Option<ColorEdit>,
+    preferences_path: Option<std::path::PathBuf>,
 }
 
 impl SiskinApp {
     pub fn new(cx: &mut Context<Self>) -> Self {
-        let mono = theme::mono_family(&cx.text_system().all_font_names());
-        let mut sessions = vec![
-            Session::with_transcript(
-                "zsh",
-                "main",
-                &["siskin", "ls -l", "git status", "cat README.md"],
-            ),
-            Session::with_transcript("cargo", "watch", &["cargo check", "cargo test", "git log"]),
-            Session::with_transcript("logs", "tail", &["ls", "pwd"]),
-        ];
-        for session in &mut sessions {
-            session.terminal.scroll_to_bottom();
-            session.scroll_to_bottom();
-        }
+        let installed = cx.text_system().all_font_names();
+        let mono_fonts = theme::mono_fonts(&installed);
+        let mono = mono_fonts[0].clone();
+        let ui = theme::ui_family(&installed).to_string();
+        let system_dark = false;
+        let mut settings = Settings::default();
+        settings.resolve_theme(system_dark);
+        let sessions = vec![Session::new("终端", settings.shell)];
         Self {
             sessions,
             active: 0,
             focus: cx.focus_handle(),
             mono: mono.into(),
+            ui: ui.into(),
+            mono_fonts,
             palette: None,
-            rail: true,
+            settings_section: SettingsSection::Appearance,
+            inspector_open: false,
+            page: Page::Terminal,
+            settings,
+            system_dark,
+            menu: None,
+            menu_state: crate::dbusmenu::MenuState::Unavailable,
+            color_edit: None,
+            preferences_path: None,
         }
+    }
+
+    pub fn theme(&self) -> Palette {
+        self.settings
+            .palette_for(self.settings.mode, self.system_dark)
+    }
+
+    pub fn set_theme_mode(&mut self, mode: crate::settings::ThemeMode) {
+        self.settings.set_mode(mode, self.system_dark);
+        self.sync_menu();
+        self.save_preferences();
+    }
+
+    pub fn set_system_dark(&mut self, dark: bool) {
+        self.system_dark = dark;
+        self.settings.resolve_theme(dark);
+    }
+
+    pub fn set_custom_accent(&mut self, accent: usize) {
+        self.settings.custom.accent = accent;
+        self.settings.custom.accent_rgb = None;
+        if self.settings.mode == crate::settings::ThemeMode::Custom {
+            self.settings.resolve_theme(self.system_dark);
+        }
+        self.save_preferences();
+    }
+
+    pub fn toggle_custom_dark(&mut self) {
+        self.settings.custom.dark = !self.settings.custom.dark;
+        if self.settings.mode == crate::settings::ThemeMode::Custom {
+            self.settings.resolve_theme(self.system_dark);
+        }
+        self.save_preferences();
+    }
+
+    pub fn load_preferences(&mut self, path: std::path::PathBuf) {
+        match crate::preferences::load(&path) {
+            Ok(prefs) => {
+                prefs.apply(&mut self.settings, &self.mono_fonts, self.system_dark);
+                self.session_mut().kind = self.settings.shell;
+            }
+            Err(error) => eprintln!("siskin: 无法读取设置，保留原文件并使用默认值：{error}"),
+        }
+        self.preferences_path = Some(path);
+    }
+
+    pub fn save_preferences(&self) {
+        if let Some(path) = &self.preferences_path {
+            let prefs =
+                crate::preferences::Preferences::from_settings(&self.settings, &self.mono_fonts);
+            if let Err(error) = crate::preferences::save(path, &prefs) {
+                eprintln!("siskin: 无法保存设置：{error}");
+            }
+        }
+    }
+
+    pub fn edit_color(&mut self, target: ColorTarget) {
+        let color = match target {
+            ColorTarget::Accent => self.settings.custom.accent_color(),
+            ColorTarget::Background => self.settings.custom.background.map_or(
+                if self.settings.custom.dark {
+                    theme::GRAPHITE.terminal
+                } else {
+                    theme::PAPER.terminal
+                },
+                |color| color.0,
+            ),
+            ColorTarget::Foreground => self.settings.custom.foreground.map_or(
+                if self.settings.custom.dark {
+                    theme::GRAPHITE.output
+                } else {
+                    theme::PAPER.output
+                },
+                |color| color.0,
+            ),
+        };
+        self.color_edit = Some(ColorEdit {
+            target,
+            draft: format!("{color:06x}"),
+            error: None,
+        });
+    }
+
+    pub fn commit_color(&mut self) {
+        let Some(edit) = self.color_edit.as_mut() else {
+            return;
+        };
+        let color = match theme::ThemeColor::try_from(edit.draft.clone()) {
+            Ok(color) => color,
+            Err(error) => {
+                edit.error = Some(error);
+                return;
+            }
+        };
+        match edit.target {
+            ColorTarget::Accent => self.settings.custom.accent_rgb = Some(color),
+            ColorTarget::Background => self.settings.custom.background = Some(color),
+            ColorTarget::Foreground => self.settings.custom.foreground = Some(color),
+        }
+        self.color_edit = None;
+        self.set_theme_mode(crate::settings::ThemeMode::Custom);
+    }
+
+    pub fn font(&self) -> SharedString {
+        self.mono_fonts
+            .get(self.settings.font_family)
+            .cloned()
+            .unwrap_or_else(|| self.mono.to_string())
+            .into()
+    }
+
+    pub fn font_size(&self) -> f32 {
+        self.settings.font_size()
+    }
+
+    pub fn row_height(&self) -> f32 {
+        self.settings.row_height()
+    }
+
+    pub fn char_width(&self) -> f32 {
+        self.settings.char_width()
+    }
+
+    pub fn select_settings_section(&mut self, section: SettingsSection) {
+        self.settings_section = section;
+        self.color_edit = None;
+    }
+
+    pub fn set_page(&mut self, page: Page) {
+        self.page = page;
+        self.palette = None;
+        self.color_edit = None;
+    }
+
+    /// Settings changes that affect prompt rendering start a fresh prompt in
+    /// the active session so the shell switch is visible immediately.
+    pub fn set_shell(&mut self, kind: ShellKind) {
+        self.settings.shell = kind;
+        let session = self.session_mut();
+        session.kind = kind;
+        session.terminal.push_line(Line::new(vec![
+            Span::new(format!("{} ", kind.name()), crate::line::Role::System),
+            Span::new(kind.startup(), crate::line::Role::Faint),
+        ]));
+        session.terminal.scroll_to_bottom();
+        session.scroll_to_bottom();
+        self.sync_menu();
+        self.save_preferences();
+    }
+
+    pub fn cycle_theme(&mut self) {
+        self.settings.next_theme(self.system_dark);
+        self.sync_menu();
+        self.save_preferences();
+    }
+
+    /// Rebuilds the menu exported to the desktop panel. Called at startup and
+    /// whenever a menu-visible setting changes.
+    pub fn sync_menu(&mut self) {
+        let Some(menu) = self.menu.as_ref() else {
+            return;
+        };
+        let layout =
+            crate::dbusmenu::build_layout(self.settings.mode.name(), self.session().kind.name());
+        menu.set_layout(layout);
+    }
+
+    /// Runs one action dispatched by the desktop menu.
+    pub fn run_menu_action(&mut self, action: crate::dbusmenu::MenuAction) {
+        use crate::dbusmenu::MenuAction;
+        match action {
+            MenuAction::NewSession => self.new_session(),
+            MenuAction::CloseSession => self.close_session(self.active),
+            MenuAction::Clear => self.clear(),
+            MenuAction::Quit => {}
+            MenuAction::CommandPalette => self.open_palette(),
+            MenuAction::Settings => self.set_page(Page::Settings),
+            MenuAction::CycleThemeMode => self.cycle_theme(),
+            MenuAction::FontLarger => self.step_font(true),
+            MenuAction::FontSmaller => self.step_font(false),
+            MenuAction::ToggleInspector => self.inspector_open = !self.inspector_open,
+            MenuAction::SetShell(kind) => self.set_shell(kind),
+        }
+        self.sync_menu();
+    }
+
+    pub fn install_menu(&mut self, window_id: u32, cx: &mut Context<Self>) {
+        let layout =
+            crate::dbusmenu::build_layout(self.settings.mode.name(), self.session().kind.name());
+        match crate::dbusmenu::install(window_id, layout) {
+            Ok(menu) => {
+                let events = menu.events();
+                self.menu = Some(menu);
+                self.menu_state = crate::dbusmenu::MenuState::Starting;
+                self.attach_menu_events(events, cx);
+            }
+            Err(error) => eprintln!("siskin: 无法启动全局菜单：{error}"),
+        }
+    }
+
+    pub fn attach_menu_events(
+        &mut self,
+        events: async_channel::Receiver<crate::dbusmenu::MenuEvent>,
+        cx: &mut Context<Self>,
+    ) {
+        cx.spawn(async move |this, cx| {
+            while let Ok(event) = events.recv().await {
+                if this
+                    .update(cx, |this, cx| {
+                        this.apply_menu_event(event, cx);
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    pub fn apply_menu_event(&mut self, event: crate::dbusmenu::MenuEvent, cx: &mut Context<Self>) {
+        use crate::dbusmenu::{MenuAction, MenuEvent};
+        match event {
+            MenuEvent::Action(MenuAction::Quit) => cx.quit(),
+            MenuEvent::Action(action) => self.run_menu_action(action),
+            MenuEvent::State(state) => self.menu_state = state,
+        }
+        cx.notify();
+    }
+
+    pub fn step_font(&mut self, up: bool) {
+        self.settings.step_font(up);
+        self.save_preferences();
     }
 
     pub fn session(&self) -> &Session {
@@ -272,14 +515,33 @@ impl SiskinApp {
     pub fn select_session(&mut self, index: usize) {
         if index < self.sessions.len() {
             self.active = index;
+            self.sync_menu();
         }
+    }
+
+    pub fn close_session(&mut self, index: usize) {
+        if index >= self.sessions.len() {
+            return;
+        }
+        if self.sessions.len() == 1 {
+            self.sessions[0].reset();
+        } else {
+            self.sessions.remove(index);
+            if index < self.active {
+                self.active -= 1;
+            }
+            self.active = self.active.min(self.sessions.len() - 1);
+        }
+        self.sync_menu();
     }
 
     pub fn new_session(&mut self) {
         let index = self.sessions.len() + 1;
         self.sessions
-            .push(Session::with_welcome(format!("siskin — {index}"), "new"));
+            .push(Session::new(format!("会话 {index}"), self.settings.shell));
         self.active = self.sessions.len() - 1;
+        self.set_page(Page::Terminal);
+        self.sync_menu();
     }
 
     pub fn cycle_session(&mut self, forward: bool) {
@@ -292,14 +554,23 @@ impl SiskinApp {
         } else {
             (self.active + len - 1) % len
         };
+        self.sync_menu();
     }
 
     pub fn submit(&mut self) {
         let index = self.active.min(self.sessions.len() - 1);
         let session = &mut self.sessions[index];
         let command = session.terminal.take_input();
+        let trimmed = command.trim();
+        // An empty Enter only moves the cursor to a fresh prompt, it does not
+        // print a bare prompt row into the scrollback.
+        if trimmed.is_empty() {
+            session.terminal.scroll_to_bottom();
+            session.scroll_to_bottom();
+            return;
+        }
         let prompt = session.prompt_span();
-        let trimmed = command.trim().to_string();
+        let trimmed = trimmed.to_string();
 
         session.terminal.push_line(Line::new(vec![
             prompt,
@@ -361,13 +632,14 @@ impl SiskinApp {
     }
 
     pub fn scroll_page(&mut self, up: bool) {
+        let row_height = self.row_height();
         let session = self.session_mut();
         if up {
             session.terminal.scroll_up(12);
         } else {
             session.terminal.scroll_down(12);
         }
-        let offset = -(session.terminal.scroll() as f32 * ROW_HEIGHT);
+        let offset = -(session.terminal.scroll() as f32 * row_height);
         session.scroll.set_offset(point(px(0.), px(offset)));
     }
 
@@ -378,7 +650,7 @@ impl SiskinApp {
     }
 
     pub fn open_palette(&mut self) {
-        self.palette = Some(Palette::new());
+        self.palette = Some(CommandPalette::new());
     }
 
     pub fn close_palette(&mut self) {
@@ -464,8 +736,18 @@ impl SiskinApp {
                 self.session_mut().terminal.set_input("siskin icon");
                 self.submit();
             }
-            PaletteAction::ToggleRail => self.rail = !self.rail,
+            PaletteAction::OpenSettings => self.set_page(Page::Settings),
+            PaletteAction::OpenTerminal => self.set_page(Page::Terminal),
+            PaletteAction::NextTheme => self.cycle_theme(),
+            PaletteAction::NextShell => {
+                self.settings.next_shell();
+                self.set_shell(self.settings.shell);
+            }
+            PaletteAction::FontLarger => self.step_font(true),
+            PaletteAction::FontSmaller => self.step_font(false),
+            PaletteAction::ToggleInspector => self.inspector_open = !self.inspector_open,
         }
+        self.sync_menu();
     }
 
     /// Applies a key press to the app. Returns false when the key is unhandled,
@@ -479,6 +761,32 @@ impl SiskinApp {
         alt: bool,
         shift: bool,
     ) -> bool {
+        if let Some(edit) = self.color_edit.as_mut() {
+            match key {
+                "enter" => self.commit_color(),
+                "escape" => self.color_edit = None,
+                "backspace" => {
+                    edit.draft.pop();
+                    edit.error = None;
+                }
+                "a" if control || platform => {
+                    edit.draft.clear();
+                    edit.error = None;
+                }
+                _ if !control && !platform && !alt => {
+                    if let Some(text) = key_char {
+                        for ch in text.chars().filter(char::is_ascii_hexdigit) {
+                            if edit.draft.len() < 6 {
+                                edit.draft.push(ch);
+                            }
+                        }
+                        edit.error = None;
+                    }
+                }
+                _ => {}
+            }
+            return true;
+        }
         if let Some(palette) = self.palette.as_ref() {
             match key {
                 "escape" => {
@@ -530,6 +838,60 @@ impl SiskinApp {
             self.cycle_session(!shift);
             return true;
         }
+        if (control || platform) && key == "," {
+            self.set_page(Page::Settings);
+            return true;
+        }
+        if (control || platform) && key == "1" {
+            self.set_page(Page::Terminal);
+            return true;
+        }
+        if (control || platform) && shift && key.eq_ignore_ascii_case("i") {
+            self.inspector_open = !self.inspector_open;
+            self.sync_menu();
+            return true;
+        }
+        if (control || platform) && shift && key.eq_ignore_ascii_case("t") {
+            self.cycle_theme();
+            return true;
+        }
+        if (control || platform) && shift && key.eq_ignore_ascii_case("s") {
+            self.settings.next_shell();
+            self.set_shell(self.settings.shell);
+            return true;
+        }
+        if (control || platform) && matches!(key, "=" | "+") {
+            self.step_font(true);
+            return true;
+        }
+        if (control || platform) && key == "-" {
+            self.step_font(false);
+            return true;
+        }
+
+        // The settings page owns its own keys; the terminal must not swallow
+        // typing while the user is browsing preferences.
+        if self.page == Page::Settings {
+            return match key {
+                "escape" | "enter" => {
+                    self.set_page(Page::Terminal);
+                    true
+                }
+                "up" => {
+                    self.step_font(true);
+                    true
+                }
+                "down" => {
+                    self.step_font(false);
+                    true
+                }
+                "left" | "right" | "tab" => {
+                    self.cycle_theme();
+                    true
+                }
+                _ => false,
+            };
+        }
 
         match key {
             "enter" => self.submit(),
@@ -560,20 +922,12 @@ impl SiskinApp {
         true
     }
 
-    pub fn run_help(&mut self) {
-        self.run_palette_action(PaletteAction::Help);
-    }
-
     pub fn command_count(&self) -> usize {
         self.session().shell.history().len()
     }
 
     pub fn line_count(&self) -> usize {
         self.session().terminal.lines().len()
-    }
-
-    pub fn scrollback_ratio(&self) -> f32 {
-        (self.line_count() as f32 / crate::terminal::SCROLLBACK_LIMIT as f32).clamp(0., 1.)
     }
 
     #[cfg(test)]
@@ -653,6 +1007,7 @@ mod tests {
     fn keyboard_history_and_completion_drive_the_input_line(cx: &mut TestAppContext) {
         let app = app(cx);
         app.update(cx, |app, _| {
+            app.session_mut().shell.run("help");
             let last = app.session().shell.history().last().cloned().unwrap();
             assert!(app.handle_key("up", None, false, false, false, false));
             assert_eq!(app.session().terminal.input(), last);
