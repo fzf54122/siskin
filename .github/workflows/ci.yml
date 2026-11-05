@@ -1,0 +1,31 @@
+# @Time    : 2026/11/4 19:40
+# @Author  : fzf
+# @FileName: ci.yml
+# @Software: Siskin
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup show
+      - name: Install Linux GUI dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-x11-0 libwayland-dev libx11-xcb-dev libxcb1-dev \
+            libvulkan1 mesa-vulkan-drivers libfontconfig1-dev libssl-dev \
+            libzstd-dev libasound2-dev libgit2-dev pkg-config clang cmake
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test --all-targets --locked
+      - run: cargo build --locked

@@ -1,0 +1,26 @@
+# @Time    : 2026/11/4 19:40
+# @Author  : fzf
+# @FileName: Cargo.toml
+# @Software: Siskin
+
+[package]
+name = "siskin"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+description = "A simulated terminal built with pulse-ui and GPUI"
+repository = "https://github.com/fzf54122/siskin"
+
+[dependencies]
+pulse-ui = { git = "https://github.com/fzf54122/resource-pulse.git", tag = "v0.1.1" }
+# Same source and commit as pulse-ui so Cargo unifies both into one gpui build.
+gpui = { git = "https://github.com/zed-industries/zed", rev = "c4273271092b0287f7d181f616bd5171e0a2f70c", default-features = false }
+image = { version = "=0.25.10", default-features = false, features = ["png"] }
+
+[dev-dependencies]
+gpui = { git = "https://github.com/zed-industries/zed", rev = "c4273271092b0287f7d181f616bd5171e0a2f70c", default-features = false, features = ["test-support"] }
+
+[profile.release]
+opt-level = 2
+strip = "symbols"

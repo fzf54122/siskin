@@ -1,0 +1,10 @@
+# @Time    : 2026/11/4 19:40
+# @Author  : fzf
+# @FileName: config.toml
+# @Software: Siskin
+
+[net]
+git-fetch-with-cli = true
+
+[build]
+jobs = 6
