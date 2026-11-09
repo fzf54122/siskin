@@ -93,6 +93,25 @@ impl std::fmt::Display for ShellError {
 
 impl std::error::Error for ShellError {}
 
+/// 交给 PTY 的终端环境。子 shell 默认裸继承父进程，于是「从桌面启动」
+/// 和「从某个终端里启动」会拿到不同的 `TERM`，提示符与行编辑行为随之不同。
+/// 这里显式给出终端应有的变量，让两种启动方式表现一致。
+pub(crate) fn terminal_env() -> Vec<(String, String)> {
+    vec![
+        // `dumb` 会让 zsh 关掉部分行编辑、p10k 退化；256 色是这个网格的真实能力。
+        ("TERM".to_string(), "xterm-256color".to_string()),
+        // 支持 24 位真彩色。少了它，部分程序会退回 256 色索引。
+        ("COLORTERM".to_string(), "truecolor".to_string()),
+        // 让 shell 集成脚本能识别宿主，Ghostty / iTerm 都用这一招。
+        ("TERM_PROGRAM".to_string(), "siskin".to_string()),
+        // 程序直接用 terminfo 而不是自己探测 tty。
+        (
+            "TERM_PROGRAM_VERSION".to_string(),
+            env!("CARGO_PKG_VERSION").to_string(),
+        ),
+    ]
+}
+
 impl ShellSpec {
     pub(crate) fn resolve(self) -> Result<ResolvedShell, ShellError> {
         match self {

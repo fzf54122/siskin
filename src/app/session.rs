@@ -63,6 +63,9 @@ impl Session {
     ) -> Result<(), String> {
         let size = ScreenSize::new(self.columns, self.rows, SCROLLBACK_LINES);
         let id = self.id;
+        // 显式给终端环境，避免「从桌面启动」和「从终端里启动」拿到不同的
+        // `TERM`，导致提示符与颜色表现不一致。
+        let env = crate::domain::shell_spec::terminal_env();
         match Pty::spawn(
             &spec.shell,
             spec.working_directory.clone(),
@@ -70,7 +73,7 @@ impl Session {
             events,
             id,
             window_id,
-            &[],
+            &env,
         ) {
             Ok(pty) => {
                 self.pty = Some(pty);
