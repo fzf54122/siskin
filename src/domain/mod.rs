@@ -8,11 +8,13 @@
 pub(crate) mod action;
 pub(crate) mod key;
 pub(crate) mod metrics;
+pub(crate) mod scroll;
 pub(crate) mod session;
 pub(crate) mod shell_spec;
 pub(crate) mod text_edit;
 
 pub(crate) use action::{Action, ActionEffect};
 pub(crate) use metrics::RenderMetrics;
+pub(crate) use scroll::ScrollOffset;
 pub(crate) use session::{ExitInfo, SessionSpec, SessionState};
 pub(crate) use shell_spec::ShellKind;

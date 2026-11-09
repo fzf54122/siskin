@@ -148,6 +148,9 @@ impl SiskinApp {
     }
 
     fn grid_layer(&self, p: &Palette, scrolled: bool, cx: &mut Context<Self>) -> Stateful<Div> {
+        // 亚行偏移：滚轮位移里不足一行的部分，渲染时整帧平移到这个位置。
+        // 鼠标换算用同一个值补偿，点击不会错行。
+        let sub = self.session().sub_pixel_offset(self.row_height());
         div()
             .id("terminal-grid")
             .debug_selector(|| "terminal-grid".into())
@@ -159,6 +162,7 @@ impl SiskinApp {
             .child(
                 GridInputs {
                     frame: self.session().frame.clone(),
+                    offset_y: sub,
                     metrics: self.metrics,
                     font: self.font(),
                     palette_bg: p.terminal,
@@ -250,18 +254,21 @@ impl SiskinApp {
         }
     }
 
-    /// 滚轮按行滚动。像素增量换算成行，避免触控板一次滚过十几行。
+    /// 滚轮按像素滚动。位移攒进会话的亚行余量，凑满一行才真正
+    /// 滚一格，不足的部分交给渲染层平移，所以看起来是连续的。
     fn scroll_wheel(&mut self, event: &ScrollEvent) {
-        let lines = match event.delta {
-            ScrollDelta::Lines(values) => values.y as i32,
-            ScrollDelta::Pixels(values) => (values.y.as_f32() / self.row_height()).round() as i32,
+        let pixels = match event.delta {
+            ScrollDelta::Lines(values) => values.y * self.row_height(),
+            ScrollDelta::Pixels(values) => values.y.as_f32(),
         };
-        if lines == 0 {
+        if pixels == 0. {
             return;
         }
-        self.session_mut().scroll(lines * 3);
-        let colors = self.ansi();
-        self.session_mut().refresh(&colors);
+        let row_height = self.row_height();
+        if self.session_mut().scroll_pixels(pixels, row_height) {
+            let colors = self.ansi();
+            self.session_mut().refresh(&colors);
+        }
     }
 
     /// 把窗口坐标换算成网格行列。越界值夹到网格边界，拖选不会越出网格。

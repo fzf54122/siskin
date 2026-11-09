@@ -49,10 +49,13 @@ impl SiskinApp {
 
     pub(crate) fn scroll_to_top(&mut self) {
         self.session_mut().scroll(i32::from(i16::MAX));
+        // 跳到边界时清掉亚行余量，否则贴顶仍留着半行偏移。
+        self.session_mut().scroll_offset.snap_to_top();
     }
 
     pub(crate) fn scroll_to_bottom(&mut self) {
         self.session_mut().scroll(-i32::from(i16::MAX));
+        self.session_mut().scroll_offset.snap_to_bottom();
     }
 
     /// 打开搜索条。已有查询词时保留，便于连续查找。

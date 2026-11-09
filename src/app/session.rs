@@ -33,6 +33,8 @@ pub(crate) struct Session {
     pub frame: Frame,
     pub columns: usize,
     pub rows: usize,
+    /// 平滑滚动的亚行余量。整行由 PTY 持有，余量只活在渲染层。
+    pub scroll_offset: crate::domain::ScrollOffset,
 }
 
 impl Session {
@@ -49,6 +51,7 @@ impl Session {
             frame: Frame::empty(INITIAL_ROWS),
             columns: INITIAL_COLUMNS,
             rows: INITIAL_ROWS,
+            scroll_offset: crate::domain::ScrollOffset::default(),
         }
     }
 
@@ -150,6 +153,24 @@ impl Session {
         if let Some(pty) = self.pty.as_mut() {
             pty.scroll(delta);
         }
+    }
+
+    /// 平滑滚动入口。像素位移先攒进亚行余量，凑满一行才提交给 PTY；
+    /// 返回值是「是否需要重绘」，余量变化也要重绘才能看出连续性。
+    pub(crate) fn scroll_pixels(&mut self, pixels: f32, row_height: f32) -> bool {
+        let lines = self.scroll_offset.accumulate(pixels, row_height);
+        if lines != 0
+            && let Some(pty) = self.pty.as_mut()
+        {
+            pty.scroll(lines);
+        }
+        // 只要有位移（哪怕没凑满一行）就该重绘，否则亚行平移不连续。
+        pixels != 0.
+    }
+
+    /// 渲染层用的亚行偏移。见 `ScrollOffset::sub_pixel`。
+    pub(crate) fn sub_pixel_offset(&self, row_height: f32) -> f32 {
+        self.scroll_offset.sub_pixel(row_height)
     }
 
     pub(crate) fn selection_text(&self) -> Option<String> {

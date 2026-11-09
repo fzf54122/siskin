@@ -82,3 +82,37 @@ fn session_ids_survive_close_and_add() {
     assert_ne!(ids[0], ids[1]);
     assert!(set.position(ids[0]).is_some());
 }
+
+/// 平滑滚动的行为契约。这些是回归护栏：把 `scroll_pixels` 改回
+/// 「直接取整成行」或「每次都调 PTY」都会在这里挂掉。
+#[test]
+fn wheel_deltas_smaller_than_a_row_do_not_move_the_grid() {
+    let mut session = Session::starting(0, "滚动", ShellKind::Zsh);
+    // 19px 的行高，只给 7px：不该滚，但亚行余量要记下来供渲染平移。
+    let moved = session.scroll_pixels(7., 19.);
+    assert!(moved, "有位移就该重绘，否则亚行平移不连续");
+    assert_eq!(session.scroll_offset.lines, 0);
+    assert_eq!(session.scroll_offset.pending, 7.);
+    assert_eq!(session.sub_pixel_offset(19.), 7.);
+}
+
+#[test]
+fn a_row_worth_of_pixels_reaches_the_terminal_once() {
+    let mut session = Session::starting(0, "滚动", ShellKind::Zsh);
+    // 7 + 7 + 7 = 21px，行高 19px：第三下凑满一行，只提交 1 行。
+    session.scroll_pixels(7., 19.);
+    session.scroll_pixels(7., 19.);
+    session.scroll_pixels(7., 19.);
+    assert_eq!(session.scroll_offset.lines, 1);
+    assert_eq!(session.scroll_offset.pending, 2.);
+}
+
+#[test]
+fn opposite_wheel_deltas_cancel_without_touching_the_terminal() {
+    let mut session = Session::starting(0, "滚动", ShellKind::Zsh);
+    session.scroll_pixels(-7., 19.);
+    session.scroll_pixels(7., 19.);
+    assert_eq!(session.scroll_offset.lines, 0);
+    assert_eq!(session.scroll_offset.pending, 0.);
+    assert_eq!(session.sub_pixel_offset(19.), 0.);
+}

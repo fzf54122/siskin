@@ -61,6 +61,8 @@ pub(crate) type OriginSlot = Arc<Mutex<Option<Point<Pixels>>>>;
 
 pub(crate) struct TerminalGrid {
     frame: Frame,
+    /// 亚行平移。整帧同向移动，所以 prepaint 里统一加到原点上。
+    offset_y: f32,
     metrics: RenderMetrics,
     font: SharedString,
     palette_bg: u32,
@@ -88,6 +90,7 @@ impl TerminalGrid {
     pub(crate) fn new(inputs: GridInputs) -> Self {
         Self {
             frame: inputs.frame,
+            offset_y: inputs.offset_y,
             metrics: inputs.metrics,
             font: inputs.font,
             palette_bg: inputs.palette_bg,
@@ -316,7 +319,10 @@ impl Element for TerminalGrid {
         window: &mut Window,
         _cx: &mut App,
     ) -> Self::PrepaintState {
-        let origin = bounds.origin + point(px(self.metrics.padding), px(self.metrics.padding));
+        // 亚行平移只作用于绘制偏移；存进 `origin_slot` 的必须是未平移的锚点，
+        // 否则鼠标换算会把整帧位移算进行列，点击随滚动一起漂。
+        let anchor = bounds.origin + point(px(self.metrics.padding), px(self.metrics.padding));
+        let origin = anchor + point(px(0.), px(self.offset_y));
         let visible_rows = (((bounds.size.height.as_f32() - self.metrics.padding * 2.)
             / self.metrics.row_height)
             .floor() as usize)
