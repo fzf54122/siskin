@@ -18,21 +18,16 @@ pub(super) fn detail(value: impl Into<SharedString>, palette: &Palette) -> Div {
         .text_color(rgb(palette.muted))
 }
 
-pub(super) fn group(palette: &Palette) -> Div {
-    pulse_ui::card()
-        .p(px(0.))
-        .rounded(px(0.))
-        .border_0()
-        .bg(rgb(palette.window))
-        .border_color(rgb(palette.border))
+pub(super) fn group() -> Div {
+    // 不再起卡片底色：设置页透出窗口底色，分组之间只靠间距区分，
+    // 避免「卡片里嵌卡片」的嵌套观感。
+    div()
 }
 
 pub(super) fn group_heading(title: &'static str, note: &'static str, p: &Palette) -> Div {
     div()
-        .mb(px(0.))
-        .pb(px(13.))
-        .border_b_1()
-        .border_color(rgb(p.border))
+        .mb(px(2.))
+        .pb(px(10.))
         .child(
             pulse_ui::heading(title)
                 .text_size(px(12.))
@@ -93,13 +88,11 @@ pub(super) fn form_row(
     div()
         .w_full()
         .min_h(px(72.))
-        .py(px(16.))
+        .py(px(18.))
         .flex()
         .items_center()
         .justify_between()
         .gap(px(24.))
-        .border_b_1()
-        .border_color(rgb(p.hairline))
         .child(
             div()
                 .flex_1()

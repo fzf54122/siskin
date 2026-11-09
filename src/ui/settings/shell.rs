@@ -7,7 +7,7 @@ use super::*;
 
 impl SiskinApp {
     pub(super) fn shell_settings(&self, p: &Palette, cx: &mut Context<Self>) -> Div {
-        group(p)
+        group()
             .child(group_heading("Shell 与会话", "", p))
             .child(form_row(
                 "默认 Shell",

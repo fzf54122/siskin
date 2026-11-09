@@ -12,7 +12,7 @@ impl SiskinApp {
             .flex_col()
             .gap(px(24.))
             .child(
-                group(p)
+                group()
                     .child(group_heading(
                         "桌面全局菜单",
                         "将菜单自然地交给桌面顶栏。",
@@ -29,7 +29,7 @@ impl SiskinApp {
                     ),
             )
             .child(
-                group(p)
+                group()
                     .child(group_heading(
                         "本地偏好设置",
                         "外观和字体自动保存，仅保留在当前设备。",

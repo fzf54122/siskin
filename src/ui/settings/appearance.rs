@@ -12,7 +12,7 @@ impl SiskinApp {
             .flex_col()
             .gap(px(28.))
             .child(
-                group(p)
+                group()
                     .child(group_heading("界面", "", p))
                     .child(form_row(
                         "颜色模式",

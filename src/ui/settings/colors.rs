@@ -7,7 +7,7 @@ use super::*;
 
 impl SiskinApp {
     pub(super) fn custom_colors(&self, p: &Palette, cx: &mut Context<Self>) -> Div {
-        group(p)
+        group()
             .child(group_heading("终端配色", "", p))
             .child(form_row(
                 "配色方案",
