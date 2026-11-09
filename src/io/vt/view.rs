@@ -33,6 +33,9 @@ pub(crate) struct CellView {
     /// 宽字符的后半格，绘制时跳过但宽度要算进前一个字。
     pub spacer: bool,
     pub selected: bool,
+    /// OSC 8 超链接地址。一整段链接上的每个 cell 共享同一份 `Arc`，
+    /// 点击判定从链接首格开始，避免落在中间断开。
+    pub link: Option<std::sync::Arc<str>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -141,6 +144,12 @@ fn cell_view(
         }
     }
 
+    // OSC 8 的 uri 在整段链接的每个 cell 上重复，取首格即可；
+    // 链接结束的 cell 带 `None`，据此把 `Ctrl+Click` 的判定切成多段。
+    let link = cell
+        .hyperlink()
+        .map(|hyperlink| std::sync::Arc::from(hyperlink.uri()) as std::sync::Arc<str>);
+
     CellView {
         text,
         style: CellStyle {
@@ -156,6 +165,7 @@ fn cell_view(
         },
         spacer: cell.flags.contains(Flags::WIDE_CHAR_SPACER),
         selected,
+        link,
     }
 }
 

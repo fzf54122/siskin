@@ -173,6 +173,7 @@ impl SiskinApp {
                         .unwrap_or_default(),
                     current_match: self.search.as_ref().and_then(|state| state.current_span()),
                     cursor: p.accent,
+                    link: p.path,
                     focused: self.page == Page::Terminal
                         && self.palette.is_none()
                         && self.search.is_none()

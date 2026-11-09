@@ -98,6 +98,7 @@ mod tests {
                     style: CellStyle::default(),
                     spacer: false,
                     selected: false,
+                    link: None,
                 })
                 .collect(),
         }
@@ -155,12 +156,14 @@ mod tests {
                 style: CellStyle::default(),
                 spacer: false,
                 selected: false,
+                link: None,
             });
             cells.push(CellView {
                 text: String::new(),
                 style: CellStyle::default(),
                 spacer: true,
                 selected: false,
+                link: None,
             });
         }
         let frame = Frame {

@@ -74,6 +74,7 @@ mod tests {
                             style: CellStyle::default(),
                             spacer: false,
                             selected: false,
+                            link: None,
                         })
                         .collect(),
                 })

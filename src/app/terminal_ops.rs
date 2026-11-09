@@ -101,20 +101,56 @@ impl SiskinApp {
 
     /// 把鼠标事件转成 SGR/X10 序列。`Shift` 按下时始终留给本地选区，
     /// `Ctrl+Click` 打开光标下这一行的链接。返回是否真的打开了东西。
-    /// 协议白名单与路径解析都在 `io::links`，这里只负责取当前行文本。
+    /// 优先级：OSC 8 超链接 → 裸路径解析（`io::links` 的白名单与
+    /// `path:line:col` 解析都在那里，这里只负责取当前行）。
     pub(crate) fn open_link_at(&mut self, row: isize, column: usize) -> bool {
-        let cwd = self.session().pty().and_then(|pty| pty.working_directory());
-        let Some(line) = self.session().frame.rows.get(row.max(0) as usize) else {
-            return false;
+        // 行内容与 cwd 都在函数前段取完，后面写 `self.status` 不再与
+        // frame 的不可变借用冲突。
+        let (linked, cwd, text) = {
+            let Some(line) = self.session().frame.rows.get(row.max(0) as usize) else {
+                return false;
+            };
+            let cwd = self.session().pty().and_then(|pty| pty.working_directory());
+            (
+                line.cells
+                    .get(column)
+                    .and_then(|cell| cell.link.as_deref().map(str::to_string)),
+                cwd,
+                line.cells
+                    .iter()
+                    .map(|cell| cell.text.as_str())
+                    .collect::<String>(),
+            )
         };
-        let text: String = line.cells.iter().map(|cell| cell.text.as_str()).collect();
+        // OSC 8：程序自己圈出的链接，地址可信度高于从文本猜。
+        if let Some(uri) = linked {
+            return self.open_uri(&uri);
+        }
         let found = crate::io::links::find(&text, cwd.as_deref());
-        let Some((range, target)) = found.into_iter().find(|(range, _)| range.contains(&column))
-        else {
+        let Some((_, target)) = found.into_iter().find(|(range, _)| range.contains(&column)) else {
             return false;
         };
-        let _ = range;
         match crate::io::links::open(&target) {
+            Ok(()) => true,
+            Err(message) => {
+                self.status = Some(message);
+                false
+            }
+        }
+    }
+
+    /// 只放开白名单协议。终端内容来自不可信程序，
+    /// `javascript:` 这类协议不能直接交给系统 opener。
+    fn open_uri(&mut self, uri: &str) -> bool {
+        let lower = uri.trim().to_ascii_lowercase();
+        if !(lower.starts_with("http://")
+            || lower.starts_with("https://")
+            || lower.starts_with("file://"))
+        {
+            self.status = Some(format!("已拦截不可信链接协议：{uri}"));
+            return false;
+        }
+        match crate::io::links::open(&crate::io::links::Target::Web(uri.to_string())) {
             Ok(()) => true,
             Err(message) => {
                 self.status = Some(message);

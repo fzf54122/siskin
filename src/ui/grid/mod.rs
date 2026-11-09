@@ -12,8 +12,11 @@
 //! 只整形可视行：滚动过的历史行不参与，这是 10 万行 scrollback 下的前提。
 
 mod cursor;
+mod inputs;
 mod runs;
 mod shape;
+
+pub(crate) use inputs::GridInputs;
 
 use std::sync::{Arc, Mutex};
 
@@ -31,6 +34,23 @@ use runs::{Run, runs_for_row};
 pub(crate) struct RowLayout {
     runs: Vec<(Point<Pixels>, Arc<gpui::ShapedLine>)>,
     backgrounds: Vec<(Point<Pixels>, Size<Pixels>, u32)>,
+    /// OSC 8 链接段的底线。另外在 hover 时由 UI 层改指针形状。
+    underlines: Vec<(Point<Pixels>, Pixels)>,
+}
+
+/// 按比例把 `accent` 混进 `base`，用于「淡一点的同类色」。
+fn mix(base: u32, accent: u32, amount: f32) -> u32 {
+    let amount = amount.clamp(0., 1.);
+    let channel = |shift: u32| {
+        let a = ((base >> shift) & 0xff) as f32;
+        let b = ((accent >> shift) & 0xff) as f32;
+        ((a * (1. - amount) + b * amount).round() as u32).min(0xff)
+    };
+    (channel(16) << 16) | (channel(8) << 8) | channel(0)
+}
+
+fn to_hsla(color: u32) -> gpui::Hsla {
+    gpui::rgba((color << 8) | 0xff).into()
 }
 
 /// 光标矩形由渲染线程写入、应用层读取，只用于输入法候选框定位。
@@ -52,6 +72,8 @@ pub(crate) struct TerminalGrid {
     match_bg: u32,
     cursor_color: u32,
     cursor_focused: bool,
+    /// OSC 8 链接的底线颜色。用强调色，与文字和搜索高亮都区分开。
+    link_color: u32,
     /// 搜索匹配区间。高亮只改背景色，不改文字内容。
     highlights: Vec<MatchSpan>,
     current_match: Option<MatchSpan>,
@@ -75,6 +97,7 @@ impl TerminalGrid {
             match_bg: inputs.match_bg,
             cursor_color: inputs.cursor,
             cursor_focused: inputs.focused,
+            link_color: inputs.link,
             highlights: inputs.highlights,
             current_match: inputs.current_match,
             cursor_slot: inputs.cursor_slot,
@@ -133,11 +156,22 @@ impl TerminalGrid {
             return RowLayout {
                 runs: Vec::new(),
                 backgrounds: Vec::new(),
+                underlines: Vec::new(),
             };
         };
         let mut shaped = Vec::new();
         let mut backgrounds = Vec::new();
+        let mut underlines = Vec::new();
         for run in runs_for_row(line) {
+            if run.is_link() {
+                // OSC 8 自带 SGR 时已有下划线；仅补纯文本链接缺失的那一种。
+                if !run.style.underline {
+                    underlines.push((
+                        self.cell_origin(origin, row, run.start_column),
+                        px(run.cell_count as f32 * self.metrics.cell_width),
+                    ));
+                }
+            }
             if run.style.bg != self.palette_bg {
                 backgrounds.push(self.background_span(&run, row, origin));
             }
@@ -168,6 +202,7 @@ impl TerminalGrid {
         RowLayout {
             runs: shaped,
             backgrounds,
+            underlines,
         }
     }
 
@@ -319,6 +354,15 @@ impl Element for TerminalGrid {
                     cx,
                 );
             }
+            // OSC 8 链接底线。画在单元格底部而不是贴基线的位置，
+            // 这样和程序自己用 SGR 4 画的下划线观感一致。
+            for (position, width) in &row.underlines {
+                let baseline = position.y + px(self.metrics.row_height) - px(2.);
+                window.paint_quad(fill(
+                    Bounds::new(point(position.x, baseline), size(*width, px(1.))),
+                    to_hsla(self.link_color),
+                ));
+            }
         }
         // 输入法通过这个 handler 拿到预编辑串与候选框锚点；必须在 paint 阶段注册。
         window.handle_input(
@@ -335,46 +379,5 @@ impl Element for TerminalGrid {
             self.cursor_focused,
             window,
         );
-    }
-}
-
-/// 按比例把 `accent` 混进 `base`，用于「淡一点的同类色」。
-fn mix(base: u32, accent: u32, amount: f32) -> u32 {
-    let amount = amount.clamp(0., 1.);
-    let channel = |shift: u32| {
-        let a = ((base >> shift) & 0xff) as f32;
-        let b = ((accent >> shift) & 0xff) as f32;
-        ((a * (1. - amount) + b * amount).round() as u32).min(0xff)
-    };
-    (channel(16) << 16) | (channel(8) << 8) | channel(0)
-}
-
-fn to_hsla(color: u32) -> gpui::Hsla {
-    gpui::rgba((color << 8) | 0xff).into()
-}
-
-/// 渲染一帧需要的全部输入。把参数打包，避免每帧传一长串位置参数。
-pub(crate) struct GridInputs {
-    pub frame: Frame,
-    pub metrics: RenderMetrics,
-    pub font: SharedString,
-    pub palette_bg: u32,
-    pub palette_fg: u32,
-    pub selection_bg: u32,
-    pub highlight_bg: u32,
-    pub match_bg: u32,
-    pub cursor: u32,
-    pub focused: bool,
-    pub highlights: Vec<MatchSpan>,
-    pub current_match: Option<MatchSpan>,
-    pub cursor_slot: CursorSlot,
-    pub origin_slot: OriginSlot,
-    pub view: gpui::Entity<crate::app::SiskinApp>,
-    pub focus: gpui::FocusHandle,
-}
-
-impl GridInputs {
-    pub(crate) fn into_element(self) -> TerminalGrid {
-        TerminalGrid::new(self)
     }
 }

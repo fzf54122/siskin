@@ -109,6 +109,23 @@ mod tests {
     }
 
     #[test]
+    fn osc8_hyperlinks_reach_the_frame() {
+        let mut screen = screen();
+        // OSC 8 的 `id` 段可省略；这里刻意带上，确认两种形态都能解析。
+        screen.feed(b"\x1b]8;;https://example.com\x1b\\link\x1b]8;;\x1b\\");
+        let frame = screen.frame(&palette());
+        let cells: Vec<_> = frame.rows[0].cells.iter().collect();
+        let linked: Vec<_> = cells.iter().filter(|cell| cell.link.is_some()).collect();
+        assert_eq!(linked.len(), 4, "链接段应有 4 个 cell 带地址");
+        assert_eq!(linked[0].link.as_deref(), Some("https://example.com"));
+        // 链接闭合后，后面的 cell 不能再带地址，否则点击会误伤。
+        let plain = cells.iter().skip(4).find(|cell| !cell.text.is_empty());
+        if let Some(plain) = plain {
+            assert!(plain.link.is_none());
+        }
+    }
+
+    #[test]
     fn screen_size_clamps_to_a_usable_grid() {
         use alacritty_terminal::grid::Dimensions;
         let size = ScreenSize::new(0, 0, 100);
