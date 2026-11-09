@@ -6,10 +6,17 @@
 use super::*;
 
 #[test]
-fn every_preset_has_distinct_surfaces() {
+fn every_preset_has_valid_surfaces_and_paper_stays_white() {
     for theme in ThemeId::PRESETS {
         let palette = Palette::of(theme);
-        assert_ne!(palette.window, palette.terminal, "{}", theme.name());
+        if theme == ThemeId::Paper {
+            assert_eq!(
+                [palette.window, palette.sidebar, palette.terminal],
+                [0xffffff; 3]
+            );
+        } else {
+            assert_ne!(palette.window, palette.terminal, "{}", theme.name());
+        }
         assert_eq!(palette.id, theme);
         assert!(palette.swatch().iter().all(|color| *color <= 0xffffff));
     }

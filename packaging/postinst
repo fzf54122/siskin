@@ -1,0 +1,20 @@
+#!/bin/sh
+# @Time    : 2026/11/5 19:40
+# @Author  : fzf
+# @FileName: postinst
+# @Software: Siskin
+#
+# 刷新图标缓存。缺少工具时静默跳过：安装本身已经成功，
+# 图标缓存只影响菜单里的显示时机。
+
+set -e
+
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
+fi
+
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database -q /usr/share/applications || true
+fi
+
+exit 0

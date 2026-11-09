@@ -27,3 +27,9 @@ job:
       type: shell
       depends_on: [test]
       cmd: "cargo build --locked"
+
+    # plan 10：结构门禁作为最后一环，任何文件或函数超限都会让整轮失败。
+    - id: structure
+      type: shell
+      depends_on: [build]
+      cmd: "python3 scripts/check_structure.py --max-lines 400 --max-fn-lines 60"

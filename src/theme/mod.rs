@@ -9,7 +9,9 @@ mod palettes;
 #[cfg(test)]
 mod tests;
 
-pub use colors::{ACCENTS, CustomTheme, ThemeColor};
+#[cfg(test)]
+pub use colors::ACCENTS;
+pub use colors::{CustomTheme, ThemeColor};
 pub use fonts::{mono_fonts, ui_family};
 pub use palettes::{DUSK, GRAPHITE, MOSS, PAPER};
 
@@ -22,6 +24,9 @@ pub enum ThemeId {
     Custom,
 }
 
+// 主题目录是给设置页与测试共用的公共表；当前界面只用到其中一部分，
+// 保留完整列表避免新增主题时再回来补枚举。
+#[allow(dead_code)]
 impl ThemeId {
     pub const PRESETS: [ThemeId; 4] = [
         ThemeId::Paper,
@@ -105,6 +110,9 @@ pub fn resolve(mode: ThemeMode, _custom: CustomTheme, system_dark: bool) -> Them
     }
 }
 
+// 调色板字段按「语义颜色」保留，界面当前只消费其中一部分；
+// `io::ansi` 与设置页预览会读取其余字段。
+#[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub struct Palette {
     pub id: ThemeId,
@@ -135,6 +143,7 @@ pub struct Palette {
     pub faint_text: u32,
 }
 
+#[allow(dead_code)]
 impl Palette {
     pub fn of(theme: ThemeId) -> Palette {
         match theme {

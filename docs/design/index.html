@@ -1,0 +1,454 @@
+<!--
+@Time    : 2026/11/5 16:42
+@Author  : fzf
+@FileName: index.html
+@Software: Siskin
+-->
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Siskin · 界面设计稿</title>
+  <style>
+    :root {
+      --frame: #ffffff; --surface: #ffffff; --raised: #ffffff;
+      --text: #233b2d; --secondary: #5b7164; --faint: #758677;
+      --line: #ddebe3; --soft-line: #edf4ef; --hover: #edf8f1;
+      --active: #e6f3eb; --accent: #38845f; --tint: #e6f3eb;
+      --blue: #427ea4; --purple: #8f6ca4; --gold: #a67e37;
+      --rail: #f6fbf8; --segment-bg: #f6fbf8; --segment-active: #e6f3eb;
+      --preview-frame: #f3faf6; --sample-bg: #f5fbf8;
+      --window-border: #d7e8de; --surface-border: #e4eee9;
+      --window-shadow: 0 28px 70px -35px #2d785b38, 0 3px 12px #2d785b0c;
+      --mono: "DejaVu Sans Mono", "Noto Sans Mono CJK SC", monospace;
+      --ui: "Noto Sans", "Noto Sans CJK SC", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; color: var(--text); font: 13px var(--ui);
+      -webkit-font-smoothing: antialiased;
+      background: linear-gradient(135deg, #f8fcff, #f0faf4);
+    }
+    body.dark {
+      --frame: #252824; --surface: #1d211e; --raised: #30352f;
+      --text: #d9dfd5; --secondary: #98a191; --faint: #73816e;
+      --line: #3b4137; --soft-line: #30362c; --hover: #333a2e;
+      --active: #373f32; --accent: #b3c899; --tint: #37442e;
+      --blue: #8eb8cb; --purple: #b9a2c3; --gold: #cbb17e;
+      --rail: var(--frame); --segment-bg: var(--frame); --segment-active: var(--raised);
+      --preview-frame: var(--frame); --sample-bg: var(--frame);
+      --window-border: #7d84775c; --surface-border: #87917e14;
+      --window-shadow: 0 32px 65px -30px #2631204d, 0 4px 13px #26312018;
+      background: #31372f;
+    }
+    button, input, select { font: inherit; color: inherit; }
+    button { border: 0; cursor: pointer; background: none; }
+    button:focus-visible, input:focus-visible, select:focus-visible {
+      outline: 2px solid var(--accent); outline-offset: 3px;
+    }
+    svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+    .symbols { position: absolute; width: 0; height: 0; overflow: hidden; }
+    .stage { width: 1440px; padding: 48px 60px 0; margin: auto; }
+    .window {
+      width: 1320px; height: 816px; overflow: hidden;
+      background: var(--frame); border-radius: 11px;
+      border: 1px solid var(--window-border);
+      box-shadow: var(--window-shadow);
+    }
+    .titlebar {
+      height: 34px; display: flex; align-items: center; justify-content: center;
+      position: relative; font-size: 11px; color: var(--secondary);
+      user-select: none;
+    }
+    .window-controls { position: absolute; right: 10px; top: 0; height: 34px; display: flex; align-items: center; gap: 5px; }
+    .window-controls span { display: grid; place-items: center; width: 27px; height: 24px; }
+    .window-controls svg { width: 11px; height: 11px; stroke-width: 1.25; }
+    .workspace { display: flex; height: calc(100% - 34px); }
+    .rail { width: 216px; flex: none; display: flex; flex-direction: column; padding: 13px 12px 10px; background: var(--rail); }
+    .rail-heading { display: flex; align-items: center; padding: 0 10px 17px; gap: 7px; font-size: 12px; color: var(--secondary); }
+    .count { color: var(--faint); font-size: 10px; font-variant-numeric: tabular-nums; }
+    .spacer { flex: 1; }
+    .icon-button { width: 28px; height: 28px; flex: none; display: inline-flex; align-items: center; justify-content: center; border-radius: 5px; color: var(--secondary); padding: 0; }
+    .icon-button:hover, .plain-button:hover { background: var(--hover); color: var(--text); }
+    .rail-heading .icon-button { width: 24px; height: 22px; }
+    .rail-heading .icon-button svg { width: 14px; height: 14px; }
+    .session { height: 41px; margin-bottom: 5px; width: 100%; display: flex; align-items: center; gap: 10px; text-align: left; padding: 0 10px; border-radius: 6px; font-size: 13px; color: var(--secondary); }
+    .session > svg { width: 15px; height: 15px; opacity: .8; }
+    .session.active { background: var(--active); box-shadow: 0 1px 3px #28351e08; color: var(--text); }
+    .session.active > svg { color: var(--accent); }
+    .session:not(.active):hover { background: var(--hover); }
+    .shell-tag { font: 10px var(--mono); color: var(--faint); margin-left: auto; }
+    .session .close { margin-left: auto; color: var(--secondary); width: 18px; height: 18px; display: grid; place-items: center; }
+    .close svg { width: 12px; height: 12px; }
+    .group-label { font-size: 10px; color: var(--faint); padding: 24px 10px 10px; letter-spacing: .4px; }
+    .activity-dot { margin-left: auto; width: 5px; height: 5px; background: var(--gold); border-radius: 50%; }
+    .rail-bottom { margin-top: auto; border-top: 1px solid var(--line); padding-top: 9px; }
+    .rail-bottom .plain-button { width: 100%; height: 35px; text-align: left; padding: 0 10px; display: flex; align-items: center; gap: 10px; font-size: 12px; border-radius: 5px; color: var(--secondary); }
+    .shortcut { margin-left: auto; font: 10px var(--ui); color: var(--faint); letter-spacing: .2px; }
+    .terminal-area { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 0 12px 12px 0; }
+    .toolbar { height: 34px; display: flex; align-items: center; gap: 6px; padding: 0 6px 8px 9px; color: var(--secondary); flex: none; }
+    .breadcrumb { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+    .breadcrumb svg { width: 13px; height: 13px; color: var(--faint); }
+    .crumb-divider { color: var(--faint); }
+    .breadcrumb strong { font-weight: 500; color: var(--text); }
+    .tool-separator { width: 1px; height: 14px; margin: 0 5px; background: var(--line); }
+    .terminal-surface { background: var(--surface); border-radius: 9px; flex: 1; min-height: 0; position: relative; border: 1px solid var(--surface-border); overflow: hidden; }
+    .terminal-content { margin: 0; padding: 24px 26px; white-space: pre; font: 14px/1.85 var(--mono); color: var(--text); }
+    .prompt { color: var(--accent); }
+    .path { color: var(--blue); }
+    .branch { color: var(--purple); }
+    .dim { color: var(--secondary); }
+    .muted { color: var(--faint); }
+    .dir { color: var(--blue); font-weight: 600; }
+    .hash { color: var(--gold); }
+    .cursor { display: inline-block; width: 8px; height: 17px; background: var(--accent); vertical-align: -3px; opacity: .8; }
+    .bottom-context { height: 28px; display: flex; align-items: center; gap: 7px; color: var(--faint); padding: 0 7px; font: 10px var(--ui); position: absolute; right: 12px; bottom: 8px; }
+    .bottom-context svg { width: 12px; height: 12px; }
+    .caption { margin-top: 25px; display: flex; align-items: baseline; gap: 13px; color: #555e50; font-size: 12px; }
+    .caption strong { font-size: 13px; font-weight: 500; }
+    .caption .prototype-label { margin-left: auto; color: #747e6e; font-size: 10px; letter-spacing: .5px; }
+    body.dark .caption { color: #bec6b8; }
+    body.dark .caption .prototype-label { color: #8e9b85; }
+    .settings-layout { display: none; }
+    body.settings .main-layout { display: none; }
+    body.settings .settings-layout { display: flex; }
+    .settings-rail { padding-top: 14px; }
+    .back-button { display: flex; align-items: center; gap: 8px; color: var(--secondary); font-size: 11px; padding: 0 10px; height: 27px; margin-bottom: 25px; }
+    .back-button svg { width: 13px; height: 13px; }
+    .settings-rail h1 { margin: 0 10px 23px; font-size: 21px; font-weight: 600; letter-spacing: -.7px; }
+    .settings-nav { height: 41px; display: flex; align-items: center; gap: 11px; border-radius: 6px; padding: 0 11px; color: var(--secondary); font-size: 13px; margin-bottom: 5px; }
+    .settings-nav.active { background: var(--active); color: var(--text); }
+    .settings-nav.active svg { color: var(--accent); }
+    .settings-nav:hover { background: var(--hover); }
+    .version { padding: 9px 10px; font-size: 10px; color: var(--faint); display: flex; align-items: center; gap: 8px; }
+    .version img { width: 17px; height: 17px; border-radius: 4px; filter: saturate(.6); }
+    .settings-area { flex: 1; min-width: 0; padding: 0 12px 12px 0; }
+    .settings-surface { height: 100%; background: var(--surface); border-radius: 9px; padding: 31px 36px 24px; display: flex; flex-direction: column; border: 1px solid var(--surface-border); }
+    .settings-header { display: flex; align-items: center; gap: 12px; margin-bottom: 29px; }
+    .settings-header h2 { margin: 0 0 7px; font-size: 22px; font-weight: 600; letter-spacing: -.5px; }
+    .settings-header p { margin: 0; color: var(--secondary); font-size: 12px; }
+    .save-state { margin-left: auto; align-self: start; margin-top: 6px; color: var(--secondary); display: flex; align-items: center; gap: 5px; font-size: 10px; }
+    .save-state svg { width: 13px; height: 13px; color: var(--accent); }
+    .settings-columns { display: grid; grid-template-columns: minmax(0, 1fr) 310px; gap: 45px; }
+    .section-title { color: var(--text); font-size: 12px; font-weight: 600; margin: 0 0 13px; }
+    .segment { display: flex; padding: 3px; background: var(--segment-bg); border-radius: 6px; height: 35px; border: 1px solid var(--soft-line); }
+    .segment button { flex: 1; font-size: 12px; color: var(--secondary); border-radius: 4px; }
+    .segment button.active { color: var(--text); background: var(--segment-active); box-shadow: 0 1px 3px #2631200a; }
+    .field-note { margin: 10px 0 27px; font-size: 11px; line-height: 1.8; color: var(--secondary); }
+    .form-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 17px 0; border-bottom: 1px solid var(--soft-line); }
+    .form-row .name { display: block; font-size: 13px; }
+    .form-row small { display: block; font-size: 11px; color: var(--secondary); margin-top: 5px; line-height: 1.7; }
+    .select { height: 31px; min-width: 146px; background: var(--raised); border: 1px solid var(--line); border-radius: 5px; display: flex; align-items: center; padding: 0 10px; gap: 12px; font-size: 11px; }
+    .select svg { margin-left: auto; height: 12px; width: 12px; color: var(--secondary); }
+    .swatches { display: flex; gap: 9px; align-items: center; }
+    .swatch { width: 18px; height: 18px; border-radius: 50%; background: var(--swatch); border: 3px solid var(--surface); outline: 1px solid transparent; padding: 0; }
+    .swatch.active { outline-color: var(--swatch); }
+    .color-input { width: 109px; height: 30px; display: flex; align-items: center; padding: 0 8px; gap: 8px; background: var(--raised); border: 1px solid var(--line); border-radius: 5px; }
+    .color-chip { width: 13px; height: 13px; border-radius: 3px; border: 1px solid #88888840; flex: none; }
+    .color-input input { min-width: 0; width: 65px; padding: 0; border: 0; outline: 0; background: transparent; font: 10px var(--mono); }
+    .settings-group + .settings-group { margin-top: 28px; }
+    .quiet-link { font-size: 10px; color: var(--secondary); padding: 4px 0; text-decoration: underline; text-underline-offset: 3px; }
+    .preview-caption { margin: 0 0 13px; display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: var(--secondary); }
+    .preview-window { background: var(--preview-frame); border: 1px solid var(--line); border-radius: 7px; padding: 7px; display: flex; gap: 7px; height: 222px; }
+    .mini-sidebar { width: 58px; flex: none; font-size: 7px; color: var(--secondary); padding-top: 5px; }
+    .mini-sidebar b { display: block; font-weight: 500; margin: 0 4px 12px; }
+    .mini-sidebar span { display: block; padding: 6px 4px; border-radius: 3px; margin-bottom: 4px; }
+    .mini-sidebar .chosen { background: var(--active); color: var(--text); }
+    .mini-terminal { flex: 1; background: var(--surface); border-radius: 4px; padding: 14px 11px; font: 8px/2 var(--mono); white-space: pre; overflow: hidden; }
+    .mini-cursor { width: 5px; height: 10px; vertical-align: -2px; display: inline-block; background: var(--accent); }
+    .preview-note { margin-top: 12px; color: var(--secondary); font-size: 11px; line-height: 1.9; }
+    .palette-strip { display: flex; margin-top: 18px; height: 9px; border-radius: 3px; overflow: hidden; }
+    .palette-strip span { flex: 1; background: var(--swatch); }
+    .settings-footer { margin-top: auto; padding-top: 20px; border-top: 1px solid var(--soft-line); color: var(--faint); font-size: 10px; display: flex; align-items: center; gap: 7px; }
+    .settings-footer svg { width: 12px; height: 12px; }
+    .settings-footer code { font: 9px var(--mono); }
+    .settings-footer button { margin-left: auto; color: var(--secondary); font-size: 10px; }
+    .font-pane { display: none; }
+    body.typography .appearance-pane { display: none; }
+    body.typography .font-pane { display: block; }
+    .font-sample { margin-top: 30px; border-radius: 6px; background: var(--sample-bg); padding: 23px; font: 13px/2 var(--mono); color: var(--text); }
+    .font-sample small { display: block; color: var(--faint); font: 10px var(--ui); margin-bottom: 14px; }
+    .stepper { display: flex; align-items: center; height: 31px; border: 1px solid var(--line); border-radius: 5px; background: var(--raised); }
+    .stepper button { width: 30px; height: 29px; color: var(--secondary); }
+    .stepper span { min-width: 52px; text-align: center; font-size: 11px; }
+    .switch { width: 29px; height: 17px; border-radius: 12px; background: var(--accent); padding: 2px; }
+    .switch:after { content: ""; display: block; width: 13px; height: 13px; border-radius: 50%; background: var(--surface); margin-left: auto; }
+    .plain-appearance { display: none; }
+    body.plain {
+      --frame: #ffffff; --surface: #ffffff; --raised: #ffffff;
+      --rail: #ffffff; --text: #3b3d42; --secondary: #62666f;
+      --faint: #70757e; --line: #e7e7e7; --soft-line: #eeeeee;
+      --hover: transparent; --active: transparent; --accent: #3b3d42;
+      --tint: #ffffff; --sample-bg: #ffffff;
+      --blue: #496c9b; --purple: #87618d; --gold: #8f703f;
+      --mono: "Noto Sans Mono", "Noto Sans Mono CJK SC", monospace;
+      background: #ffffff;
+    }
+    .plain .stage { width: 1280px; padding: 0; }
+    .plain .window { width: 1280px; height: 800px; border: 0; border-radius: 0; box-shadow: none; }
+    .plain .titlebar { height: 32px; border-bottom: 1px solid var(--line); }
+    .plain .workspace { height: calc(100% - 32px); }
+    .plain .caption { display: none; }
+    .plain .rail { width: 224px; padding: 0 12px 12px; border-right: 1px solid #cdcdcd; }
+    .plain .rail-heading { height: 42px; flex: none; padding: 0 10px; margin-bottom: 11px; color: var(--text); font-size: 13px; font-weight: 600; }
+    .plain .session { height: 40px; margin-bottom: 5px; border-radius: 3px; border: 1px solid transparent; border-left-width: 3px; padding: 0 10px; color: var(--text); }
+    .plain .session.active { border-color: #d7d7d7; border-left-color: var(--text); box-shadow: none; font-weight: 500; }
+    .plain .session.active > svg { color: var(--text); }
+    .plain .session:hover { color: var(--text); }
+    .plain .session .close { opacity: .8; }
+    .plain .session .close:hover { opacity: 1; }
+    .plain .icon-button { border-radius: 2px; }
+    .plain .icon-button:hover { color: #000000; }
+    .plain .rail-bottom { border-top: 1px solid var(--line); padding-top: 10px; }
+    .plain .rail-bottom .plain-button { padding: 0 10px; color: var(--text); }
+    .plain .terminal-area { padding: 0; }
+    .plain .toolbar { height: 42px; padding: 0 20px 0 26px; border-bottom: 1px solid var(--line); }
+    .plain .terminal-surface { border: 0; border-radius: 0; }
+    .plain .terminal-content { padding: 25px 28px; font-size: 14px; line-height: 1.8; }
+    .plain .cursor { width: 2px; opacity: 1; }
+    .plain .prompt { color: var(--text); }
+    .plain .dir { font-weight: 400; }
+    .plain .settings-rail .back-button { height: 42px; margin: 0 0 24px; padding: 0 10px; flex: none; color: var(--text); }
+    .plain .settings-rail h1 { display: none; }
+    .plain .settings-nav { height: 40px; padding: 0 10px; margin-bottom: 5px; border: 1px solid transparent; border-left-width: 3px; border-radius: 3px; color: var(--text); }
+    .plain .settings-nav.active { border-color: #d7d7d7; border-left-color: var(--text); font-weight: 500; }
+    .plain .version { padding: 9px 10px 2px; }
+    .plain .version img { display: none; }
+    .plain .settings-area { padding: 0; }
+    .plain .settings-surface { border: 0; border-radius: 0; padding: 40px 48px 28px; }
+    .plain .settings-header { max-width: 760px; margin-bottom: 33px; }
+    .plain .settings-header h2 { font-size: 22px; font-weight: 500; }
+    .plain .settings-header p { font-size: 12px; }
+    .plain .save-state { margin-top: 8px; }
+    .plain .settings-columns { display: block; max-width: 760px; }
+    .plain .settings-columns > aside { display: none; }
+    .plain .appearance-pane { display: none; }
+    .plain .plain-appearance { display: block; }
+    .plain.typography .plain-appearance { display: none; }
+    .plain .section-title { font-size: 12px; font-weight: 500; margin: 0; padding-bottom: 13px; border-bottom: 1px solid var(--line); }
+    .plain .form-row { min-height: 72px; padding: 16px 0; border-bottom: 1px solid var(--soft-line); }
+    .plain .form-row .name { font-size: 13px; }
+    .plain .form-row small { font-size: 11px; }
+    .plain .select, .plain .color-input, .plain .stepper, .plain .segment {
+      width: 240px; flex: none; min-width: 0; height: 33px;
+      border-radius: 3px; border: 1px solid #dcdcdc;
+      background: #ffffff; box-shadow: none;
+    }
+    .plain .select { font-size: 12px; }
+    .plain .segment { padding: 0; }
+    .plain .segment button { font-size: 11px; border-radius: 0; position: relative; }
+    .plain .segment button + button { border-left: 1px solid var(--line); }
+    .plain .segment button.active { font-weight: 500; background: #ffffff; box-shadow: none; }
+    .plain .segment button.active::after { content: ""; position: absolute; height: 2px; background: var(--accent); bottom: 0; left: 11px; right: 11px; }
+    .plain .color-input { padding: 0 11px; gap: 10px; }
+    .plain .color-input input { flex: 1; font-size: 11px; }
+    .plain .color-chip { width: 14px; height: 14px; border-radius: 2px; }
+    .plain .settings-group + .settings-group { margin-top: 29px; }
+    .plain .quiet-link { margin-top: 15px; font-size: 11px; }
+    .plain .settings-footer { max-width: 760px; padding-top: 17px; font-size: 10px; }
+    .plain .font-sample { border: 1px solid var(--line); border-radius: 3px; padding: 20px; }
+    .plain .stepper span { flex: 1; }
+    .plain .stepper button { width: 36px; }
+  </style>
+</head>
+<body>
+  <svg class="symbols" xmlns="http://www.w3.org/2000/svg"><defs>
+    <symbol id="terminal" viewBox="0 0 20 20"><path d="m4 6 4 4-4 4m7 0h5"/></symbol>
+    <symbol id="plus" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></symbol>
+    <symbol id="close" viewBox="0 0 20 20"><path d="m5 5 10 10M15 5 5 15"/></symbol>
+    <symbol id="search" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></symbol>
+    <symbol id="panel" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M12 4v12"/></symbol>
+    <symbol id="sliders" viewBox="0 0 20 20"><path d="M3 5h14M3 10h14M3 15h14M7 3v4m6 1v4m-5 1v4"/></symbol>
+    <symbol id="command" viewBox="0 0 20 20"><path d="m4 5 4 4-4 4m7 1h5"/></symbol>
+    <symbol id="chevron" viewBox="0 0 20 20"><path d="m6 8 4 4 4-4"/></symbol>
+    <symbol id="folder" viewBox="0 0 20 20"><path d="M3 6V4h5l2 2h7v10H3Z"/></symbol>
+    <symbol id="arrow" viewBox="0 0 20 20"><path d="M16 10H4m5-5-5 5 5 5"/></symbol>
+    <symbol id="check" viewBox="0 0 20 20"><path d="m4 10 4 4 8-8"/></symbol>
+    <symbol id="palette" viewBox="0 0 20 20"><path d="M17 11a7 7 0 1 0-7 6c2 0 1-3 3-3s4 0 4-3Z"/><path d="M6 7h.01M10 5h.01M14 8h.01M5 11h.01" stroke-width="2.5"/></symbol>
+    <symbol id="type" viewBox="0 0 20 20"><path d="m3 16 5-12 5 12M5 12h6m3-3h4m-2 0v7"/></symbol>
+    <symbol id="keyboard" viewBox="0 0 20 20"><rect x="2" y="5" width="16" height="11" rx="2"/><path d="M5 8h.01M8 8h.01M11 8h.01M14 8h.01M5 11h.01M8 11h.01M11 11h.01M14 11h.01M6 14h8"/></symbol>
+    <symbol id="desktop" viewBox="0 0 20 20"><rect x="2" y="3" width="16" height="11" rx="2"/><path d="M7 18h6m-3-4v4"/></symbol>
+    <symbol id="info" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7"/><path d="M10 9v5m0-8h.01"/></symbol>
+    <symbol id="dots" viewBox="0 0 20 20"><path d="M4 10h.01M10 10h.01M16 10h.01" stroke-width="2.5"/></symbol>
+    <symbol id="min" viewBox="0 0 20 20"><path d="M5 10h10"/></symbol>
+    <symbol id="max" viewBox="0 0 20 20"><rect x="5" y="5" width="10" height="10" rx="1"/></symbol>
+  </defs></svg>
+  <main class="stage">
+    <div class="window">
+      <div class="titlebar"><span id="window-title">siskin — Siskin</span>
+        <div class="window-controls" aria-hidden="true"><span><svg><use href="#min"/></svg></span><span><svg><use href="#max"/></svg></span><span><svg><use href="#close"/></svg></span></div>
+      </div>
+      <div class="workspace main-layout">
+        <aside class="rail">
+          <div class="rail-heading">会话 <span class="count">3</span><span class="spacer"></span><button class="icon-button" title="新建会话 · Ctrl+Shift+N"><svg><use href="#plus"/></svg></button></div>
+          <button class="session active"><svg><use href="#terminal"/></svg><span>siskin</span><span class="close"><svg><use href="#close"/></svg></span></button>
+          <button class="session"><svg><use href="#terminal"/></svg><span>resource-pulse</span><span class="shell-tag">zsh</span></button>
+          <button class="session"><svg><use href="#terminal"/></svg><span>playground</span><span class="shell-tag">bash</span></button>
+          <div class="rail-bottom">
+            <button class="plain-button" title="搜索命令和操作"><svg><use href="#command"/></svg>命令面板 <span class="shortcut">Ctrl K</span></button>
+            <button class="plain-button" onclick="navigate('settings')"><svg><use href="#sliders"/></svg>设置 <span class="shortcut">Ctrl ,</span></button>
+          </div>
+        </aside>
+        <section class="terminal-area">
+          <div class="toolbar">
+            <div class="breadcrumb"><svg><use href="#folder"/></svg><span>~</span><span class="crumb-divider">/</span><span>code</span><span class="crumb-divider">/</span><span>rust</span><span class="crumb-divider">/</span><strong>siskin</strong></div>
+            <span class="spacer"></span>
+            <button class="icon-button" title="搜索终端 · Ctrl+Shift+F"><svg><use href="#search"/></svg></button>
+            <button class="icon-button" title="会话信息 · Ctrl+Shift+I"><svg><use href="#panel"/></svg></button>
+            <span class="tool-separator"></span><button class="icon-button" title="更多操作"><svg><use href="#dots"/></svg></button>
+          </div>
+          <div class="terminal-surface">
+<pre class="terminal-content"><span class="path">~/code/rust/siskin</span>  <span class="branch">main</span>
+<span class="prompt">❯</span> pwd
+/home/fzf/code/rust/siskin
+
+<span class="prompt">❯</span> ls
+<span class="dir">assets</span>      Cargo.lock   CHANGELOG.md  LICENSE    <span class="dir">scripts</span>
+build.rs    Cargo.toml   <span class="dir">docs</span>          <span class="dir">packaging</span>  <span class="dir">src</span>
+
+<span class="prompt">❯</span> git log --oneline -3
+<span class="hash">0956206</span> feat: redesign Siskin as a focused terminal workspace
+<span class="hash">1c0fea4</span> ci: link against libxkbcommon development headers
+<span class="hash">a8db6c5</span> ci: install rustfmt and clippy for the pinned toolchain
+
+<span class="path">~/code/rust/siskin</span>  <span class="branch">main</span>
+<span class="prompt">❯</span> <span class="cursor"></span></pre>
+          </div>
+        </section>
+      </div>
+      <div class="workspace settings-layout">
+        <aside class="rail settings-rail">
+          <button class="back-button" onclick="navigate('terminal')"><svg><use href="#arrow"/></svg>返回终端</button>
+          <h1>设置</h1>
+          <button class="settings-nav active" id="nav-appearance" onclick="navigate('settings')"><svg><use href="#palette"/></svg>外观</button>
+          <button class="settings-nav" id="nav-typography" onclick="navigate('typography')"><svg><use href="#type"/></svg>字体与排版</button>
+          <button class="settings-nav"><svg><use href="#terminal"/></svg>Shell 与会话</button>
+          <button class="settings-nav"><svg><use href="#desktop"/></svg>桌面集成</button>
+          <div class="spacer"></div>
+          <div class="version"><img src="../../assets/siskin-256.png" alt="">Siskin <span class="count">0.2.0</span></div>
+        </aside>
+        <section class="settings-area">
+          <div class="settings-surface">
+            <header class="settings-header">
+              <div><h2 id="section-title">外观</h2><p id="section-description">主题、颜色与界面外观。</p></div>
+              <div class="save-state"><svg><use href="#check"/></svg>已保存</div>
+            </header>
+            <div class="settings-columns">
+              <div>
+                <div class="plain-appearance">
+                  <div class="settings-group">
+                    <h3 class="section-title">界面</h3>
+                    <div class="form-row">
+                      <div><span class="name">颜色模式</span><small>跟随桌面，或使用固定的浅色、深色外观。</small></div>
+                      <div class="segment" aria-label="界面颜色模式">
+                        <button>跟随系统</button><button class="active">浅色</button><button>深色</button>
+                      </div>
+                    </div>
+                    <div class="form-row">
+                      <div><span class="name">强调色</span><small>用于选中状态和键盘焦点。</small></div>
+                      <button class="select">跟随文字 <svg><use href="#chevron"/></svg></button>
+                    </div>
+                  </div>
+                  <div class="settings-group">
+                    <h3 class="section-title">终端配色</h3>
+                    <div class="form-row">
+                      <div><span class="name">配色方案</span><small>应用于终端文字与 ANSI 颜色。</small></div>
+                      <button class="select">柔和浅色 <svg><use href="#chevron"/></svg></button>
+                    </div>
+                    <div class="form-row">
+                      <label class="name" for="plain-background">背景颜色</label>
+                      <div class="color-input"><span class="color-chip" style="background:#ffffff"></span><input id="plain-background" value="#FFFFFF" aria-label="极简主题背景颜色"></div>
+                    </div>
+                    <div class="form-row">
+                      <label class="name" for="plain-foreground">文字颜色</label>
+                      <div class="color-input"><span class="color-chip" style="background:#3b3d42"></span><input id="plain-foreground" value="#3B3D42" aria-label="极简主题文字颜色"></div>
+                    </div>
+                    <button class="quiet-link">恢复默认配色</button>
+                  </div>
+                </div>
+                <div class="appearance-pane">
+                  <h3 class="section-title">颜色模式</h3>
+                  <div class="segment" aria-label="颜色模式">
+                    <button onclick="setMode(this, 'system')">跟随系统</button><button class="active" onclick="setMode(this, 'light')">浅色</button><button onclick="setMode(this, 'dark')">深色</button><button onclick="setMode(this, 'custom')">自定义</button>
+                  </div>
+                  <p class="field-note">跟随系统时，界面与终端一起响应桌面深浅色变化。</p>
+                  <div class="settings-group">
+                    <h3 class="section-title">界面</h3>
+                    <div class="form-row" style="padding-top:0"><div><span class="name">主题</span><small>同时应用于侧栏、控件与终端。</small></div><button class="select">清透白 <svg><use href="#chevron"/></svg></button></div>
+                    <div class="form-row"><div><span class="name">强调色</span><small>用于选中状态和键盘焦点。</small></div><div class="swatches"><button title="青绿" class="swatch active" style="--swatch:#38845f" onclick="setAccent(this, '#38845f')"></button><button title="湖蓝" class="swatch" style="--swatch:#427ea4" onclick="setAccent(this, '#427ea4')"></button><button title="烟紫" class="swatch" style="--swatch:#93829d" onclick="setAccent(this, '#93829d')"></button><button title="赭黄" class="swatch" style="--swatch:#b29a67" onclick="setAccent(this, '#b29a67')"></button><button title="石墨" class="swatch" style="--swatch:#6a7067" onclick="setAccent(this, '#6a7067')"></button></div></div>
+                  </div>
+                  <div class="settings-group">
+                    <h3 class="section-title">终端颜色</h3>
+                    <div class="form-row" style="padding-top:0"><label class="name" for="background">背景</label><div class="color-input"><span class="color-chip" style="background:#ffffff"></span><input id="background" value="#FFFFFF" aria-label="终端背景颜色"></div></div>
+                    <div class="form-row"><label class="name" for="foreground">文字</label><div class="color-input"><span class="color-chip" style="background:#233b2d"></span><input id="foreground" value="#233B2D" aria-label="终端文字颜色"></div></div>
+                    <p class="field-note" style="margin-bottom:8px">修改色值后切换为自定义主题，按 Enter 应用，Esc 取消。</p>
+                    <button class="quiet-link">恢复主题默认值</button>
+                  </div>
+                </div>
+                <div class="font-pane">
+                  <h3 class="section-title">终端文字</h3>
+                  <div class="form-row" style="padding-top:0"><div><span class="name">字体</span><small>选择系统中已安装的等宽字体。</small></div><button class="select" style="min-width:195px">Noto Sans Mono <svg><use href="#chevron"/></svg></button></div>
+                  <div class="form-row"><div><span class="name">字号</span><small>也可用 Ctrl + / Ctrl − 临时调整。</small></div><div class="stepper"><button aria-label="减小字号">−</button><span>13 px</span><button aria-label="增大字号">+</button></div></div>
+                  <div class="form-row"><div><span class="name">行高</span><small>根据字体度量自动调整。</small></div><span class="dim" style="font-size:11px">自动 · 1.25 倍</span></div>
+                  <div class="font-sample"><small>字形预览</small>Aa Bb Cc  0123456789<br>Il1 O0 {} [] () =&gt; !=<br>中文输入 · 对齐与间距</div>
+                </div>
+              </div>
+              <aside>
+                <div class="preview-caption"><span>终端预览</span><span>实时更新</span></div>
+                <div class="preview-window">
+                  <div class="mini-sidebar"><b>会话</b><span class="chosen">siskin</span><span>workspace</span></div>
+                  <div class="mini-terminal"><span class="path">~/siskin</span>  <span class="branch">main</span>
+<span class="prompt">❯</span> ls
+<span class="dir">src  assets  docs</span>
+Cargo.toml  README.md
+
+<span class="prompt">❯</span> <span class="mini-cursor"></span></div>
+                </div>
+                <div class="palette-strip"><span style="--swatch:#30332f"></span><span style="--swatch:#ad6d67"></span><span style="--swatch:#7c946b"></span><span style="--swatch:#b49d6b"></span><span style="--swatch:#7194ab"></span><span style="--swatch:#a18aa9"></span><span style="--swatch:#7c9c96"></span><span style="--swatch:#d5d8cf"></span></div>
+                <p class="preview-note">改动即时生效，无需重启。<br>正在运行的 Shell 和会话不会被打断。</p>
+              </aside>
+            </div>
+            <footer class="settings-footer"><svg><use href="#info"/></svg><span>配置文件</span><code>~/.config/siskin/settings.json</code><button title="打开配置文件所在目录">在文件夹中显示 ↗</button></footer>
+          </div>
+        </section>
+      </div>
+    </div>
+    <div class="caption"><strong id="caption-title">01 / 终端工作区</strong><span id="caption-description">柔和侧栏 · 一体化画布 · 按需出现的工具</span><span class="prototype-label">SISKIN / 设计效果稿，非运行截图</span></div>
+  </main>
+  <script>
+    function navigate(view) {
+      location.hash = view;
+      render();
+    }
+    function render() {
+      const view = location.hash.slice(1) || "terminal";
+      const plain = new URLSearchParams(location.search).get("style") === "plain";
+      const settings = view === "settings" || view === "typography";
+      const typography = view === "typography";
+      document.body.classList.toggle("settings", settings);
+      document.body.classList.toggle("plain", plain);
+      document.body.classList.toggle("typography", typography);
+      document.body.classList.toggle("dark", view === "dark");
+      document.getElementById("window-title").textContent = settings ? "设置 — Siskin" : "siskin — Siskin";
+      document.getElementById("section-title").textContent = typography ? "字体与排版" : "外观";
+      document.getElementById("section-description").textContent = typography ? "终端字体、字号与字形预览。" : "主题、颜色与界面外观。";
+      document.getElementById("nav-appearance").classList.toggle("active", !typography);
+      document.getElementById("nav-typography").classList.toggle("active", typography);
+      document.getElementById("caption-title").textContent = settings ? (typography ? "03 / 字体与排版" : "02 / 设置") : (view === "dark" ? "04 / 深色工作区" : "01 / 终端工作区");
+      document.getElementById("caption-description").textContent = settings ? "分类导航 · 标准表单 · 实时预览" : "柔和侧栏 · 一体化画布 · 按需出现的工具";
+    }
+    function setMode(button, mode) {
+      document.querySelectorAll(".segment button").forEach(item => item.classList.toggle("active", item === button));
+      document.body.classList.toggle("dark", mode === "dark");
+    }
+    function setAccent(button, color) {
+      document.querySelectorAll(".swatch").forEach(item => item.classList.toggle("active", item === button));
+      document.documentElement.style.setProperty("--accent", color);
+    }
+    addEventListener("hashchange", render);
+    addEventListener("keydown", event => { if (event.key === "Escape") navigate("terminal"); });
+    render();
+  </script>
+</body>
+</html>

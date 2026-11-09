@@ -1,0 +1,21 @@
+# @Time    : 2026/11/5 19:40
+# @Author  : fzf
+# @FileName: io.github.fzf.Siskin.desktop
+# @Software: Siskin
+
+[Desktop Entry]
+Type=Application
+Name=Siskin
+Name[zh_CN]=Siskin 终端
+GenericName=Terminal Emulator
+GenericName[zh_CN]=终端模拟器
+Comment=A focused terminal for Linux
+Comment[zh_CN]=安静、专注的 Linux 终端
+Exec=siskin %F
+TryExec=siskin
+Icon=io.github.fzf.Siskin
+Terminal=false
+Categories=System;TerminalEmulator;
+Keywords=terminal;shell;console;prompt;终端;命令行;Shell;
+StartupWMClass=io.github.fzf.Siskin
+StartupNotify=true

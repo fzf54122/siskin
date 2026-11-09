@@ -4,11 +4,13 @@
 // @Software: Siskin
 
 pub const MONO_FONTS: [&str; 6] = [
-    "JetBrains Mono",
+    // Nerd Font 排在前面：Powerlevel10k 之类的提示符依赖它的图标字形，
+    // 换成不含图标的字体时提示符会显示成方块。
     "MesloLGL Nerd Font Mono",
+    "JetBrains Mono",
+    "Noto Sans Mono",
     "Fira Code",
     "DejaVu Sans Mono",
-    "Noto Sans Mono",
     "Liberation Mono",
 ];
 
@@ -28,7 +30,7 @@ pub fn mono_fonts(installed: &[String]) -> Vec<String> {
         .map(|name| name.to_string())
         .collect();
     if fonts.is_empty() {
-        if let Some(first) = installed.iter().find(|name| name.contains("Mono")) {
+        if let Some(first) = installed.iter().find(|name| name.ends_with("Mono")) {
             fonts.push(first.clone());
         } else {
             fonts.push("monospace".to_string());

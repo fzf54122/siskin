@@ -1,0 +1,19 @@
+#!/bin/sh
+# @Time    : 2026/11/5 19:40
+# @Author  : fzf
+# @FileName: postrm
+# @Software: Siskin
+#
+# 卸载后清掉图标缓存，避免开始菜单里留下一个点不开的空图标。
+
+set -e
+
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
+fi
+
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database -q /usr/share/applications || true
+fi
+
+exit 0

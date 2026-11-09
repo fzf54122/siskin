@@ -1,1 +1,94 @@
+
+# ==============================
+# Rust / Cargo
+# ==============================
+
+# Cargo 编译产物、依赖构建缓存
 /target/
+
+# Rust 编译器生成的备份文件
+**/*.rs.bk
+
+# rustc 崩溃时生成的错误报告
+rustc-ice-*.txt
+
+# ==============================
+# Rust Analyzer / Zed
+# ==============================
+
+# Rust Analyzer 临时文件（如果项目中产生）
+**/*.rs.pending-snap
+
+# Zed 编辑器项目级配置（团队需要共享时可删除此行）
+.zed/
+
+# ==============================
+# IDE / 编辑器
+# ==============================
+
+# JetBrains 系列 IDE 配置
+.idea/
+
+# VS Code 配置（需要共享团队配置时可改为选择性忽略）
+.vscode/
+
+# VS Code 工作区文件
+*.code-workspace
+
+# Vim 临时交换文件
+*.swp
+*.swo
+*~
+
+# Helix 编辑器配置
+.helix/
+
+# ==============================
+# 环境变量 / 本地配置
+# ==============================
+
+# 环境变量、密钥、数据库密码
+.env
+.env.*
+!.env.example
+
+# 本地覆盖配置
+config.local.toml
+
+# direnv 本地环境配置
+.envrc
+.direnv/
+
+# ==============================
+# 日志 / 临时文件
+# ==============================
+
+*.log
+*.tmp
+*.temp
+
+# Python packaging helpers
+__pycache__/
+
+# ==============================
+# 操作系统垃圾文件
+# ==============================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Desktop.ini
+desktop.ini
+$RECYCLE.BIN/
+
+# Linux 临时备份
+.fuse_hidden*
+
+/.agents/*
+!/.agents/loop.yaml
+/.zed/
