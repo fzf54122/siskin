@@ -20,6 +20,9 @@
 
 ![Siskin 设置页](docs/settings-verified.png)
 
+> 以上截图摄于 tab 条改造之前，仍可见左侧会话侧栏；当前版本窗口顶端
+> 只有一条 28px 会话 tab，其余区域都是终端。新版截图待补。
+
 ## 这是什么
 
 打开就是你的登录 shell。会话跑在独立的伪终端里，`alacritty_terminal`
@@ -192,12 +195,17 @@ src/
 │   ├── palette.rs     命令面板状态
 │   ├── prefs_ops.rs   设置加载 / 保存
 │   ├── menu_ops.rs    全局菜单生命周期
-│   ├── terminal_ops.rs 写入、选区、滚动、鼠标上报
+│   ├── close_ops.rs   关闭确认与会话关闭
+│   ├── terminal_ops.rs 写入、选区、滚动、鼠标上报、打开链接
+│   ├── search_ops.rs 滚动区搜索状态
+│   ├── workspace_ops.rs 工作目录与侧栏标题
+│   ├── editor_ops.rs 颜色编辑框
 │   └── theme_ops.rs   主题与取色
 ├── domain/            纯数据，不 use gpui / zbus
 │   ├── action.rs      Action、ActionEffect
 │   ├── key.rs         与框架无关的按键描述
 │   ├── metrics.rs     字形度量与行列换算
+│   ├── scroll.rs      平滑滚动的亚行余量
 │   ├── session.rs     SessionState 状态机、SessionSpec
 │   └── shell_spec.rs  ShellKind → ShellSpec
 ├── io/                系统边界，不 use gpui
@@ -205,15 +213,21 @@ src/
 │   ├── vt/            alacritty_terminal 封装（event / view）
 │   ├── ansi.rs        ANSI / 256 / truecolor → RGB
 │   ├── keys.rs        按键 → PTY 字节、bracketed paste、鼠标上报
+│   ├── links.rs       链接与路径识别、白名单打开
+│   ├── search.rs      滚动区匹配区间
+│   ├── instance.rs    第二实例转发
 │   ├── preferences/   版本化配置与 Store trait
 │   └── dbusmenu/      全局菜单
 ├── ui/                GPUI 视图
 │   ├── mod.rs         Render 实现、字体度量
-│   ├── grid/          自定义 Element：run 合并、整形、光标
-│   ├── terminal.rs    终端卡片、鼠标选区、输入法
-│   ├── sidebar.rs / workspace.rs / inspector.rs / palette.rs / preview.rs
+│   ├── grid/          自定义 Element：inputs / runs / shape / cursor
+│   ├── terminal.rs    终端卡片、鼠标选区、输入法、滚轮
+│   ├── sidebar.rs     会话 tab 条（终端页唯一的常驻条）
+│   ├── workspace.rs / inspector.rs / palette.rs / preview.rs
+│   ├── input.rs / input_handler.rs  输入法预编辑
+│   ├── icons.rs / widgets.rs / close.rs
 │   └── settings/      appearance / colors / fonts / shell / desktop
-├── theme/             配色、字体偏好
+├── theme/             配色、字体偏好与对比度校正
 ├── settings.rs        设置数据
 └── tests/             keys / views / session / preferences / pty
 ```
@@ -255,6 +269,11 @@ neo-runner run -f .agents/loop.yaml --output json
 - **Wayland 输入法**依赖合成器的 `text-input-v3`。不可用时请切 X11。
 - **全局菜单**只在 X11 验证；Wayland 下不注册全局菜单，用命令面板代替。
 - **OSC 52** 默认只允许程序写剪贴板，禁止读系统剪贴板。
+- **命令语义与通知**未实现。`alacritty_terminal` 0.26 不解析 OSC 133 / 9 / 777，
+  这些序列被静默丢弃，所以 tab 状态点只反映 PTY 生命周期，任务完成时不会亮起，
+  也没有完成提醒。要做需自己解析 PTY 字节流，与现有后端重复一遍解析。
+- **窗口模糊**未实现。GPUI 该提交的 Linux 后端只切换 surface 的 alpha 模式，
+  不读取背面内容，`Blurred` 与 `Transparent` 行为一致。
 - **deb ABI** 只保证构建机同代发行版可安装。
 - 未实现 sixel 与 kitty graphics protocol。
 
