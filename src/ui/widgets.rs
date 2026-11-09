@@ -141,7 +141,8 @@ pub(super) fn icon_action(
     chrome_action(id, "", p, cx, move |app| {
         app.dispatch(action);
     })
-    .w(px(28.))
+    .w(px(24.))
+    .h(px(24.))
     .px(px(0.))
     .when(selected, |view| view.bg(rgb(p.tint)))
     .tooltip(move |_, cx| {

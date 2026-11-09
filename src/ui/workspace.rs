@@ -18,7 +18,8 @@ impl SiskinApp {
             .flex()
             .flex_col()
             .when(self.page == Page::Terminal, |view| {
-                view.child(self.workspace_heading(p, cx))
+                view.child(self.session_tabs(p, cx))
+                    .child(self.workspace_heading(p, cx))
                     .child(div().flex_1().min_h_0().child(self.terminal_page(p, cx)))
             })
             .when(self.page == Page::Settings, |view| {

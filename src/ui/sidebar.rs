@@ -3,141 +3,111 @@
 // @FileName: sidebar.rs
 // @Software: Siskin
 
-use super::brand::brand_mark;
 use super::*;
 use crate::domain::{Action, SessionState};
 
 impl SiskinApp {
-    pub(super) fn session_sidebar(&self, p: &Palette, cx: &mut Context<Self>) -> Div {
-        if self.page == Page::Settings {
-            return self.settings_sidebar(p, cx);
-        }
-        side_rail(p)
-            .child(
-                div()
-                    .h(px(HEADING_HEIGHT))
-                    .flex_shrink_0()
-                    .px(px(14.))
-                    .flex()
-                    .items_center()
-                    .gap(px(9.))
-                    .child(brand_mark(24.))
-                    .child(
-                        label("会话", p.ink)
-                            .text_size(px(13.))
-                            .font_weight(FontWeight::MEDIUM),
-                    )
-                    .child(detail(self.sessions.len().to_string(), p).text_size(px(10.)))
-                    .child(div().flex_1())
-                    .child(icon_action(
-                        "new-session",
-                        ChromeIcon::Plus,
-                        "新建会话 · Ctrl+Shift+N",
-                        false,
-                        Action::NewSession,
-                        p,
-                        cx,
-                    )),
+    /// 会话 tab 条：只占终端上方一条 28px 的横带，替代常驻侧栏。
+    /// 每个 tab 显示标题与状态点，关闭按钮只在选中时低透明度可见。
+    pub(super) fn session_tabs(&self, p: &Palette, cx: &mut Context<Self>) -> Stateful<Div> {
+        div()
+            .id("session-tabs")
+            .debug_selector(|| "session-tabs".into())
+            .flex()
+            .items_center()
+            .gap(px(2.))
+            .h(px(TAB_BAR_HEIGHT))
+            .flex_shrink_0()
+            .px(px(6.))
+            .py(px(2.))
+            .bg(rgb(p.window))
+            .border_b_1()
+            .border_color(rgb(p.hairline))
+            .children(
+                self.sessions
+                    .iter()
+                    .enumerate()
+                    .map(|(index, _)| self.session_tab(index, p, cx)),
             )
-            .child(
-                div()
-                    .id("session-list")
-                    .debug_selector(|| "session-list".into())
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .track_scroll(&self.session_scroll)
-                    .px(px(12.))
-                    .pt(px(11.))
-                    .flex()
-                    .flex_col()
-                    .gap(px(5.))
-                    .children(
-                        self.sessions
-                            .iter()
-                            .map(|(index, _)| self.session_item(index, p, cx)),
-                    ),
-            )
-            .child(
-                div()
-                    .mx(px(12.))
-                    .pb(px(12.))
-                    .pt(px(10.))
-                    .border_t_1()
-                    .border_color(rgb(p.hairline))
-                    .child(side_action(
-                        "nav-settings",
-                        "设置",
-                        "Ctrl ,",
-                        ChromeIcon::Palette,
-                        p,
-                        cx,
-                        |app| {
-                            app.dispatch(Action::OpenSettings);
-                        },
-                    )),
-            )
+            .child(div().flex_1())
+            .child(icon_action(
+                "new-session",
+                ChromeIcon::Plus,
+                "新建会话 · Ctrl+Shift+N",
+                false,
+                Action::NewSession,
+                p,
+                cx,
+            ))
+            .child(icon_action(
+                "nav-settings",
+                ChromeIcon::Palette,
+                "设置 · Ctrl+,",
+                false,
+                Action::OpenSettings,
+                p,
+                cx,
+            ))
     }
 
-    fn session_item(&self, index: usize, p: &Palette, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn session_tab(&self, index: usize, p: &Palette, cx: &mut Context<Self>) -> Stateful<Div> {
         let Some(session) = self.sessions.get(index) else {
             return div().id(("session-missing", index));
         };
         let selected = index == self.active_index();
         div()
             .id(("session", index))
-            .debug_selector(move || format!("session-{index}"))
+            .debug_selector(move || format!("session-{index}",))
             .relative()
-            .h(px(40.))
+            .h(px(22.))
             .flex_shrink_0()
             .flex()
             .items_center()
-            .gap(px(9.))
-            .px(px(10.))
-            .rounded(px(3.))
-            .border_1()
-            .border_color(rgb(if selected { p.border } else { p.sidebar }))
-            .bg(rgb(p.sidebar))
+            .gap(px(6.))
+            .pl(px(9.))
+            .pr(px(7.))
+            .rounded(px(4.))
             .cursor_pointer()
-            .hover(|style| style.border_color(rgb(p.border)))
+            .text_size(px(12.))
+            .text_color(rgb(if selected { p.ink } else { p.muted }))
+            .bg(rgb(if selected { p.tint } else { 0x00000000 }))
+            .hover(|style| style.text_color(rgb(p.ink)).bg(rgb(p.tint)))
             .on_click(cx.listener(move |app, _, _, cx| {
                 app.select_session(index);
                 app.set_page(Page::Terminal);
                 cx.notify();
             }))
-            .when(selected, |view| {
-                view.child(
-                    div()
-                        .absolute()
-                        .left(px(0.))
-                        .top(px(6.))
-                        .bottom(px(6.))
-                        .w(px(3.))
-                        .bg(rgb(p.ink)),
-                )
-            })
-            .child(chrome_icon(
-                ChromeIcon::Terminal,
-                if selected { p.ink } else { p.muted },
-            ))
+            .child(Self::status_dot(session, p))
             .child(
                 label(
                     session.display_title(),
                     if selected { p.ink } else { p.muted },
                 )
-                .text_size(px(13.))
                 .flex_1()
                 .min_w_0()
                 .truncate()
                 .when(selected, |view| view.font_weight(FontWeight::MEDIUM)),
             )
-            .when(matches!(session.state, SessionState::Failed(_)), |view| {
-                view.child(div().size(px(4.)).rounded_full().bg(rgb(p.error)))
-            })
             .child(
                 self.close_session_button(index, p, cx)
-                    .opacity(if selected { 0.8 } else { 0.45 }),
+                    .opacity(if selected { 0.7 } else { 0.0 }),
             )
+    }
+
+    /// 状态点：运行中绿、启动中琥珀、失败红、已退出灰。
+    /// 桌面侧 `SessionState` 已经给出语义，这里只做颜色映射。
+    fn status_dot(session: &crate::app::Session, p: &Palette) -> Div {
+        let color = match session.state {
+            SessionState::Starting => p.warn,
+            SessionState::Running => p.success,
+            SessionState::Failed(_) => p.error,
+            SessionState::Exited(_) => p.faint,
+        };
+        div()
+            .size(px(6.))
+            .flex_shrink_0()
+            .rounded_full()
+            .bg(rgb(color))
     }
 
     fn close_session_button(
@@ -149,26 +119,26 @@ impl SiskinApp {
         div()
             .id(("close-session", index))
             .debug_selector(move || format!("close-session-{index}"))
-            .size(px(24.))
+            .size(px(16.))
             .flex_shrink_0()
             .flex()
             .items_center()
             .justify_center()
             .rounded(px(3.))
             .cursor_pointer()
-            .hover(|style| style.bg(rgb(p.tint)))
+            .hover(|style| style.bg(rgb(p.border)).opacity(1.))
             .on_click(cx.listener(move |app, _, _, cx| {
                 app.close_session(index);
                 cx.stop_propagation();
                 cx.notify();
             }))
-            .child(chrome_icon(ChromeIcon::Close, p.faint).size(px(12.)))
+            .child(chrome_icon(ChromeIcon::Close, p.muted).size(px(10.)))
     }
 }
 
 pub(super) fn side_rail(p: &Palette) -> Div {
     div()
-        .w(px(SIDEBAR_WIDTH))
+        .w(px(SETTINGS_RAIL_WIDTH))
         .flex_shrink_0()
         .h_full()
         .flex()

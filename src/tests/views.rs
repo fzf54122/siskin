@@ -151,17 +151,11 @@ fn theme_modes_fonts_and_shell_options_update_immediately(cx: &mut TestAppContex
 }
 
 #[gpui::test]
-fn minimum_window_keeps_sidebar_and_workspace_visible(cx: &mut TestAppContext) {
+fn minimum_window_keeps_tabs_and_workspace_visible(cx: &mut TestAppContext) {
     let (_, cx) = window(cx);
     cx.simulate_resize(size(px(960.), px(640.)));
     redraw(cx);
-    for id in [
-        "session-0",
-        "new-session",
-        "nav-settings",
-        "terminal-grid",
-        "workspace-heading",
-    ] {
+    for id in ["session-0", "new-session", "nav-settings", "terminal-grid"] {
         let bounds = cx.debug_bounds(id).unwrap();
         assert!(
             bounds.left() >= px(0.) && bounds.right() <= px(960.),
@@ -172,9 +166,9 @@ fn minimum_window_keeps_sidebar_and_workspace_visible(cx: &mut TestAppContext) {
             "{id}: {bounds:?}"
         );
     }
-    let sidebar = cx.debug_bounds("session-list").unwrap();
+    // 没有侧栏后，终端区应该铺满整窗宽度，最小窗口下也保住可视列数。
     let workspace = cx.debug_bounds("workspace").unwrap();
-    assert!(sidebar.right() <= workspace.left());
+    assert!(workspace.left() == px(0.));
     assert!(workspace.size.width >= px(720.));
     click(cx, "nav-settings");
     click(cx, "settings-section-0");
@@ -237,7 +231,8 @@ fn inspector_width_is_reserved_only_when_open_and_wide_enough(cx: &mut TestAppCo
     cx.simulate_resize(size(px(900.), px(560.)));
     redraw(cx);
     assert!(cx.debug_bounds("session-inspector").is_none());
-    assert_eq!(cx.debug_bounds("workspace").unwrap().size.width, px(676.));
+    // 900 < 1100 阈值，检视面板不占位；侧栏已移除，终端区铺满整窗。
+    assert_eq!(cx.debug_bounds("workspace").unwrap().size.width, px(900.));
 }
 
 #[gpui::test]

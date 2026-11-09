@@ -5,7 +5,6 @@
 
 //! GPUI 视图，不直接碰 `std::process`。会话、PTY、配置都在 `app` 与 `io`。
 
-mod brand;
 mod close;
 mod grid;
 mod icons;
@@ -32,7 +31,9 @@ use gpui::{
 use icons::{ChromeIcon, chrome_icon};
 use widgets::*;
 
-const SIDEBAR_WIDTH: f32 = 224.;
+// 设置页保留左侧分类导航，宽度比旧版会话侧栏窄。
+const SETTINGS_RAIL_WIDTH: f32 = 224.;
+const TAB_BAR_HEIGHT: f32 = 28.;
 const HEADING_HEIGHT: f32 = 42.;
 const INSPECTOR_WIDTH: f32 = 280.;
 
@@ -88,7 +89,9 @@ impl Render for SiskinApp {
                     .debug_selector(|| "main-workspace".into())
                     .size_full()
                     .flex()
-                    .child(self.session_sidebar(&palette, cx))
+                    .when(self.page == Page::Settings, |root| {
+                        root.child(self.settings_sidebar(&palette, cx))
+                    })
                     .child(self.workspace(&palette, cx))
                     .when(show_inspector, |root| {
                         root.child(self.session_inspector(&palette, cx))
@@ -133,10 +136,10 @@ impl SiskinApp {
         let line_height = ((ascent + descent) * 1.25).max(self.font_size() * 1.15);
         const PADDING: f32 = 24.;
         let viewport = window.viewport_size();
-        let width = viewport.width.as_f32()
-            - SIDEBAR_WIDTH
-            - if show_inspector { INSPECTOR_WIDTH } else { 0. };
-        let height = viewport.height.as_f32() - HEADING_HEIGHT;
+        // 侧栏已移除，终端可用宽度就是窗口宽度，只扣除右侧会话信息面板。
+        let width = viewport.width.as_f32() - if show_inspector { INSPECTOR_WIDTH } else { 0. };
+        // tab 条与标题栏都在终端上方，纵向可用高度要同时扣掉。
+        let height = viewport.height.as_f32() - TAB_BAR_HEIGHT - HEADING_HEIGHT;
         self.metrics =
             crate::domain::RenderMetrics::new(cell_width, line_height, self.font_size(), PADDING);
         let columns = self.metrics.columns(width);
