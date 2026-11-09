@@ -82,7 +82,10 @@ impl Render for SiskinApp {
             .font_family(self.ui.clone())
             .text_size(px(14.))
             .text_color(rgb(palette.ink))
-            .bg(rgb(palette.canvas))
+            // 半透明画布：窗口 surface 已切到 PreMultiplied alpha，这里给出
+            // 0.92 的不透明度，桌面内容会从背后透出来。终端区域另用
+            // `palette.terminal` 实底遮挡，保证输出可读。
+            .bg(rgba((palette.canvas << 8) | (0.92 * 255.) as u32))
             .child(
                 div()
                     .id("main-workspace")

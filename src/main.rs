@@ -25,8 +25,8 @@ use std::sync::Arc;
 use app::SiskinApp;
 use domain::SessionSpec;
 use gpui::{
-    App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowDecorations, WindowOptions, px,
-    size,
+    App, AppContext, Bounds, TitlebarOptions, WindowBackgroundAppearance, WindowBounds,
+    WindowDecorations, WindowOptions, px, size,
 };
 use pulse_ui::application;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -125,6 +125,10 @@ fn window_options(cx: &mut App) -> WindowOptions {
         app_id: Some("io.github.fzf.Siskin".into()),
         icon: window_icon(),
         window_decorations: Some(WindowDecorations::Server),
+        // 透明窗口：surface 用 PreMultiplied alpha，背后的桌面由合成器提供。
+        // 注意这只是让窗口「能」透，UI 各处仍画不透明底色，见
+        // `SiskinApp::render` 里的 canvas。
+        window_background: WindowBackgroundAppearance::Transparent,
         ..Default::default()
     }
 }
