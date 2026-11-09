@@ -81,10 +81,13 @@ fn session_spec(args: &Args) -> Option<SessionSpec> {
     let command = args.command.as_ref()?;
     let program = PathBuf::from(&command[0]);
     let rest = command[1..].to_vec();
-    Some(
-        SessionSpec::command(command[0].clone(), program, rest)
-            .with_directory(args.working_directory.clone()),
-    )
+    // 标签用程序名而不是完整路径：`-e /opt/app/run` 不该让标签挤满一坨路径，
+    // 与 `-e htop` 显示 `htop` 保持一致。
+    let label = program
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| command[0].clone());
+    Some(SessionSpec::command(label, program, rest).with_directory(args.working_directory.clone()))
 }
 
 /// The X11 window id the desktop panel uses to look up our menu. GPUI hands
