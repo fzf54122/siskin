@@ -65,6 +65,24 @@ fn closing_the_active_tail_lands_on_the_previous_session() {
 }
 
 #[test]
+fn closing_the_last_session_asks_the_window_to_close_instead_of_respawning() {
+    // 剩一个会话时仓储拒绝删除：关闭由应用层转成「请求退出」，
+    // 不会偷偷再派生一个 shell 让窗口永远关不掉。
+    let mut set = sessions(1);
+    assert!(!set.close(0));
+    assert_eq!(set.len(), 1);
+}
+
+#[test]
+fn closing_one_of_two_sessions_keeps_the_remaining_one_active() {
+    let mut set = sessions(2);
+    set.select(1);
+    assert!(set.close(1));
+    assert_eq!(set.len(), 1);
+    assert_eq!(set.active_index(), 0);
+}
+
+#[test]
 fn new_sessions_start_in_the_starting_state() {
     let set = sessions(1);
     assert_eq!(set.active().state, SessionState::Starting);

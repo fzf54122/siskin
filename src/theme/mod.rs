@@ -15,6 +15,12 @@ pub use colors::{CustomTheme, ThemeColor};
 pub use fonts::{mono_fonts, ui_family};
 pub use palettes::{DUSK, GRAPHITE, MOSS, PAPER};
 
+use colors::{ensure_contrast, mix};
+
+/// 自定义主题的前景/底色对比度下限。4.5 是 WCAG 对正常字号文本的 AA 线，
+/// 终端字号通常小于界面正文，按更严的一档取。
+const MINIMUM_CONTRAST: f64 = 4.5;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ThemeId {
     Paper,
@@ -157,6 +163,9 @@ impl Palette {
 
     /// Builds a custom palette from a base tone and an accent. Dark bases get
     /// lifted text and darkened surfaces so contrast stays readable.
+    ///
+    /// 用户填的前景色不会原样采信：先按 `MINIMUM_CONTRAST` 校正，避免
+    /// 白底配白字这种「设完就什么都看不见」的组合。
     pub fn custom(custom: CustomTheme) -> Palette {
         let accent = custom.accent_color();
         let mut palette = if custom.dark { GRAPHITE } else { PAPER };
@@ -168,10 +177,13 @@ impl Palette {
             palette.terminal = color.0;
         }
         if let Some(color) = custom.foreground {
-            palette.ink = color.0;
-            palette.command = color.0;
-            palette.output = color.0;
+            let foreground = ensure_contrast(color.0, palette.terminal, MINIMUM_CONTRAST);
+            palette.ink = foreground;
+            palette.command = foreground;
+            palette.output = foreground;
         }
+        palette.faint_text =
+            ensure_contrast(palette.faint_text, palette.terminal, MINIMUM_CONTRAST);
         palette.accent_soft = if custom.dark {
             mix(palette.window, accent, 0.40)
         } else {
@@ -194,15 +206,4 @@ impl Palette {
     pub fn shell_color(&self) -> u32 {
         self.success
     }
-}
-
-/// Blends `a` toward `b`; `t` is how much of `b` to take.
-fn mix(a: u32, b: u32, t: f32) -> u32 {
-    let t = t.clamp(0., 1.);
-    let channel = |shift: u32| {
-        let left = ((a >> shift) & 0xff) as f32;
-        let right = ((b >> shift) & 0xff) as f32;
-        ((left * (1. - t) + right * t).round() as u32).min(0xff)
-    };
-    (channel(16) << 16) | (channel(8) << 8) | channel(0)
 }

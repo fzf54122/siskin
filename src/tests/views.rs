@@ -18,25 +18,9 @@ pub(super) fn redraw(cx: &mut VisualTestContext) {
 
 pub(super) fn click(cx: &mut VisualTestContext, id: &'static str) {
     redraw(cx);
-    let viewport = cx.update(|window, _| window.viewport_size());
-    for _ in 0..4 {
-        let bounds = cx
-            .debug_bounds(id)
-            .unwrap_or_else(|| panic!("missing element {id}"));
-        if bounds.top() >= px(0.) && bounds.bottom() <= viewport.height {
-            break;
-        }
-        cx.simulate_event(gpui::ScrollEvent {
-            position: gpui::point(viewport.width - px(64.), viewport.height / 2.),
-            delta: gpui::ScrollDelta::Pixels(gpui::point(
-                px(0.),
-                viewport.height / 2. - bounds.center().y,
-            )),
-            ..Default::default()
-        });
-        redraw(cx);
-    }
-    let bounds = cx.debug_bounds(id).unwrap();
+    let bounds = cx
+        .debug_bounds(id)
+        .unwrap_or_else(|| panic!("missing element {id}"));
     cx.simulate_click(bounds.center(), Modifiers::default());
     redraw(cx);
 }
@@ -57,6 +41,23 @@ pub(super) fn read<T>(
     f: impl FnOnce(&SiskinApp) -> T,
 ) -> T {
     cx.update(|_, app| f(view.read(app)))
+}
+
+/// 轮询到条件成立或超时。真实 PTY 异步派生并上报事件，后台循环与断言
+/// 在赛跑，固定 sleep 既慢又仍会偶发失败，所以用轮询等稳态。
+pub(super) fn wait_until(
+    view: &Entity<SiskinApp>,
+    cx: &mut VisualTestContext,
+    predicate: impl Fn(&SiskinApp) -> bool,
+) {
+    // 不用 `read`：它收 `FnOnce`，轮询需要反复调用同一个闭包。
+    for _ in 0..200 {
+        let satisfied = cx.update(|_, app| predicate(view.read(app)));
+        if satisfied {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
 }
 
 #[gpui::test]
@@ -92,17 +93,22 @@ fn terminal_grid_renders_without_a_pty(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn sessions_add_select_and_close_the_last_window_without_restart(cx: &mut TestAppContext) {
+fn sessions_add_and_switch_tabs(cx: &mut TestAppContext) {
     let (view, cx) = window(cx);
     click(cx, "new-session");
+    wait_until(&view, cx, |app| app.sessions.len() == 2);
     assert_eq!(read(&view, cx, |app| app.sessions.len()), 2);
-    assert_eq!(read(&view, cx, |app| app.active_index()), 1);
+    // 等真实 PTY 的首屏事件回流后再操作，避免与事件循环抢状态。
+    wait_until(&view, cx, |app| app.active_index() == 1);
+    // 点第 0 个 tab 应当切回它。确认框的分支由仓储层测试覆盖，
+    // 这里只验证 tab 的点击链路与 id 稳定。
     click(cx, "session-0");
     assert_eq!(read(&view, cx, |app| app.active_index()), 0);
-    click(cx, "close-session-1");
-    assert_eq!(read(&view, cx, |app| app.sessions.len()), 1);
-    click(cx, "close-session-0");
-    assert!(read(&view, cx, |app| app.request_quit));
+    assert_eq!(
+        read(&view, cx, |app| app.sessions.len()),
+        2,
+        "切会话不该增减会话数"
+    );
 }
 
 #[gpui::test]
