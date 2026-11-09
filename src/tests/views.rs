@@ -110,7 +110,7 @@ fn inspector_is_optional_and_settings_stay_in_the_workspace(cx: &mut TestAppCont
     let (view, cx) = window(cx);
     redraw(cx);
     assert!(cx.debug_bounds("session-inspector").is_none());
-    click(cx, "toggle-inspector");
+    cx.simulate_keystrokes("ctrl-shift-i");
     assert!(read(&view, cx, |app| app.inspector_open));
     assert!(cx.debug_bounds("session-inspector").is_some());
     click(cx, "nav-settings");
@@ -225,7 +225,8 @@ fn custom_rgb_edits_validate_and_apply_to_terminal(cx: &mut TestAppContext) {
 fn inspector_width_is_reserved_only_when_open_and_wide_enough(cx: &mut TestAppContext) {
     let (_, cx) = window(cx);
     let closed = cx.debug_bounds("workspace").unwrap().size.width;
-    click(cx, "toggle-inspector");
+    cx.simulate_keystrokes("ctrl-shift-i");
+    redraw(cx);
     let open = cx.debug_bounds("workspace").unwrap().size.width;
     assert!(open < closed);
     cx.simulate_resize(size(px(900.), px(560.)));

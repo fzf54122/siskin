@@ -12,7 +12,6 @@ pub(super) enum ChromeIcon {
     Plus,
     Close,
     Search,
-    Panel,
     Back,
     Type,
     Palette,
@@ -68,10 +67,6 @@ fn icon_paths(icon: ChromeIcon) -> &'static [&'static [(f32, f32)]] {
                 (4., 5.),
                 (8., 3.),
             ],
-        ],
-        ChromeIcon::Panel => &[
-            &[(3., 4.), (17., 4.), (17., 16.), (3., 16.), (3., 4.)],
-            &[(12., 4.), (12., 16.)],
         ],
         ChromeIcon::Back => &[&[(16., 10.), (4., 10.), (9., 5.)], &[(4., 10.), (9., 15.)]],
         ChromeIcon::Type => &[

@@ -39,24 +39,8 @@ impl SiskinApp {
                     .truncate()
                     .px(px(8.)),
             )
-            .child(icon_action(
-                "open-search",
-                ChromeIcon::Search,
-                "搜索终端 · Ctrl+Shift+F",
-                self.search.is_some(),
-                Action::OpenSearch,
-                p,
-                cx,
-            ))
-            .child(icon_action(
-                "toggle-inspector",
-                ChromeIcon::Panel,
-                "会话信息 · Ctrl+Shift+I",
-                self.inspector_open,
-                Action::ToggleInspector,
-                p,
-                cx,
-            ))
+            // 搜索与会话信息都有快捷键和命令面板条目，不再各占一个图标按钮；
+            // tab 条右侧只留新建与设置两个高频入口。
             .child(icon_action(
                 "new-session",
                 ChromeIcon::Plus,
