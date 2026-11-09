@@ -25,12 +25,19 @@
 打开就是你的登录 shell。会话跑在独立的伪终端里，`alacritty_terminal`
 负责 VT 状态机与网格，GPUI 负责把网格画到窗口上。
 
+界面刻意留白：没有侧栏，没有标题栏，窗口顶端只有一条 28px 的会话 tab。
+tab 带状态点（运行中 / 启动中 / 失败 / 已退出），跟随当前工作目录，
+右侧只留新建与会话设置两个入口。其余操作走快捷键和命令面板。
+多会话时 tab 并排，单会话时几乎不占位。
+
 能做的事：
 
 - `vim`、`htop`、`tmux`、`ssh`、`cargo watch` 正常工作，全屏 TUI 不乱位。
 - 中文输入法组词、候选框跟随光标；提交前不写入 PTY。
 - 鼠标拖选复制到 PRIMARY，`Ctrl+Shift+C/V` 走系统剪贴板，多行粘贴不会自动执行。
-- 滚轮、`Shift+PageUp/PageDown` 回看滚动区，`Shift+End` 贴回底部。
+- 滚轮按像素平滑滚动；`Shift+PageUp/PageDown` 回看滚动区，`Shift+End` 贴回底部。
+- `Ctrl+Click` 打开 OSC 8 超链接，或输出里的路径与 `path:line:col`。
+- 自定义主题的文字颜色按 WCAG 4.5 校正后才生效，不会把终端设成看不见。
 - 主题、字体、Shell、字号改完立即生效并保存。
 
 明确不做：SSH 客户端、分屏、标签拖拽重排、Windows / macOS 安装包、
