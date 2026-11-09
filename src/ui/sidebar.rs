@@ -29,7 +29,34 @@ impl SiskinApp {
                     .enumerate()
                     .map(|(index, _)| self.session_tab(index, p, cx)),
             )
-            .child(div().flex_1())
+            // 当前工作目录跟在 tab 之后，长路径只保留末级目录；
+            // 完整路径仍在系统 titlebar 的副标题位置。
+            .child(
+                label(self.directory_label(), p.faint)
+                    .text_size(px(11.))
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .px(px(8.)),
+            )
+            .child(icon_action(
+                "open-search",
+                ChromeIcon::Search,
+                "搜索终端 · Ctrl+Shift+F",
+                self.search.is_some(),
+                Action::OpenSearch,
+                p,
+                cx,
+            ))
+            .child(icon_action(
+                "toggle-inspector",
+                ChromeIcon::Panel,
+                "会话信息 · Ctrl+Shift+I",
+                self.inspector_open,
+                Action::ToggleInspector,
+                p,
+                cx,
+            ))
             .child(icon_action(
                 "new-session",
                 ChromeIcon::Plus,

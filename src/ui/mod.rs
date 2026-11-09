@@ -138,8 +138,8 @@ impl SiskinApp {
         let viewport = window.viewport_size();
         // 侧栏已移除，终端可用宽度就是窗口宽度，只扣除右侧会话信息面板。
         let width = viewport.width.as_f32() - if show_inspector { INSPECTOR_WIDTH } else { 0. };
-        // tab 条与标题栏都在终端上方，纵向可用高度要同时扣掉。
-        let height = viewport.height.as_f32() - TAB_BAR_HEIGHT - HEADING_HEIGHT;
+        // tab 条是终端上方唯一的常驻条，纵向可用高度只扣它。
+        let height = viewport.height.as_f32() - TAB_BAR_HEIGHT;
         self.metrics =
             crate::domain::RenderMetrics::new(cell_width, line_height, self.font_size(), PADDING);
         let columns = self.metrics.columns(width);

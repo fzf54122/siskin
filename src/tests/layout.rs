@@ -12,19 +12,15 @@ use crate::{
 use gpui::{AppContext, EntityInputHandler, Keystroke, TestAppContext, px};
 
 #[gpui::test]
-fn approved_layout_keeps_a_tab_bar_and_flat_forms(cx: &mut TestAppContext) {
+fn approved_layout_keeps_tab_bar_as_the_only_rail(cx: &mut TestAppContext) {
     let (view, cx) = window(cx);
     redraw(cx);
-    assert_eq!(
-        cx.debug_bounds("workspace-heading").unwrap().size.height,
-        px(42.)
-    );
     assert_eq!(
         cx.debug_bounds("session-tabs").unwrap().size.height,
         px(28.)
     );
     assert_eq!(cx.debug_bounds("session-0").unwrap().size.height, px(22.));
-    // 侧栏已移除：终端区从窗口左缘开始，不再被固定宽度的导航栏占位。
+    // 侧栏与标题栏都已移除：终端区从窗口左缘开始，窗口顶端只剩 tab 条。
     assert_eq!(cx.debug_bounds("workspace").unwrap().left(), px(0.));
     click(cx, "nav-settings");
     assert!(cx.debug_bounds("session-tabs").is_none());
