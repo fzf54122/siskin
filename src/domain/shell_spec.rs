@@ -48,7 +48,7 @@ impl ShellKind {
         ["/usr/bin", "/bin", "/usr/local/bin"]
             .into_iter()
             .map(|dir| PathBuf::from(dir).join(name))
-            .find(|path| path.is_file())
+            .find(|path| is_executable(path))
     }
 }
 
@@ -123,19 +123,57 @@ impl ShellSpec {
                 })
             }
             ShellSpec::Program(program) => Ok(ResolvedShell {
-                program: program_to_string(&program)?,
+                program: resolve_program(&program)?,
                 args: Vec::new(),
             }),
             ShellSpec::WithArgs { program, args } => Ok(ResolvedShell {
-                program: program_to_string(&program)?,
+                program: resolve_program(&program)?,
                 args,
             }),
         }
     }
 }
 
+/// 可执行文件判定。用 `exists` 而不是 `is_file`：`/bin/sh` 这类符号链接
+/// 在多数发行版上指向 `dash`，`is_file` 会跟随链接失败并误判为「找不到」。
+fn is_executable(program: &std::path::Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::metadata(program)
+        .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+}
+
+/// 把用户给的程序名解析成可执行路径。
+///
+/// 两种情况分别处理：
+/// - 已含路径（`/bin/sh`、`./run`、`../app/bin/x`）：直接判定存在。
+/// - 裸名字（`sh`、`vim`、`htop`）：按 `PATH` 逐个目录找，找不到才算缺失。
+///
+/// 不这么分的话，`siskin -e vim` 会在启动目录里找一个不存在的 `vim`，
+/// 报「找不到可执行文件」，尽管 `vim` 明明在 PATH 里。
+fn resolve_program(program: &std::path::Path) -> Result<String, ShellError> {
+    if program.as_os_str().as_encoded_bytes().contains(&b'/') {
+        return program_to_string(program);
+    }
+    let missing = ShellError::MissingProgram(program.display().to_string());
+    let Some(paths) = std::env::var_os("PATH") else {
+        return Err(missing);
+    };
+    for directory in std::env::split_paths(&paths) {
+        let candidate = if directory.as_os_str().is_empty() {
+            program.to_path_buf()
+        } else {
+            directory.join(program)
+        };
+        if is_executable(&candidate) {
+            return program_to_string(&candidate);
+        }
+    }
+    Err(missing)
+}
+
 fn program_to_string(program: &std::path::Path) -> Result<String, ShellError> {
-    if !program.is_file() {
+    if !is_executable(program) {
         return Err(ShellError::MissingProgram(program.display().to_string()));
     }
     program
@@ -148,23 +186,65 @@ fn program_to_string(program: &std::path::Path) -> Result<String, ShellError> {
 pub(crate) fn default_shell() -> PathBuf {
     std::env::var_os("SHELL")
         .map(PathBuf::from)
-        .filter(|path| path.is_file())
+        .filter(|path| is_executable(path))
         .unwrap_or_else(|| PathBuf::from("/bin/sh"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn default_spec_resolves_to_an_existing_program() {
         let resolved = ShellSpec::Default.resolve().expect("默认 shell 必须可解析");
-        assert!(PathBuf::from(&resolved.program).is_file());
+        assert!(is_executable(Path::new(&resolved.program)));
+    }
+
+    /// `/bin/sh` 是符号链接。这条守住「跟随链接而非只看普通文件」的判定，
+    /// 否则每个发行版的 POSIX shell 都被误判为「找不到可执行文件」。
+    #[test]
+    fn a_symlinked_program_is_accepted() {
+        let symlinked = ShellSpec::Program(PathBuf::from("/bin/sh"));
+        assert!(symlinked.resolve().is_ok(), "/bin/sh 必须能解析");
+    }
+
+    /// 预设定位同样要跟随符号链接，否则 `sh` 预设永远选不中。
+    #[test]
+    fn a_preset_locates_symlinked_shells() {
+        let located = ShellKind::Sh.spec();
+        match located {
+            ShellSpec::Program(path) => assert!(is_executable(&path), "{path:?} 必须可执行"),
+            other => panic!("sh 预设应定位到具体路径，得到 {other:?}"),
+        }
     }
 
     #[test]
     fn a_missing_program_is_reported_before_spawning() {
         let spec = ShellSpec::Program(PathBuf::from("/nonexistent/siskin-shell"));
+        assert!(matches!(spec.resolve(), Err(ShellError::MissingProgram(_))));
+    }
+
+    /// `-e vim` 给的是裸名字。解析必须走 `PATH`，而不是在启动目录里找一个
+    /// 同名的空文件，否则每个 PATH 里的程序都启动不了。
+    #[test]
+    fn a_bare_program_name_is_resolved_through_path() {
+        let spec = ShellSpec::WithArgs {
+            program: PathBuf::from("sh"),
+            args: vec!["-c".into(), "printf hi".into()],
+        };
+        let resolved = spec.resolve().expect("sh 应在 PATH 里");
+        assert!(
+            std::path::Path::new(&resolved.program).is_absolute(),
+            "裸名字应解析成绝对路径，得到 {}",
+            resolved.program
+        );
+        assert_eq!(resolved.args, ["-c", "printf hi"]);
+    }
+
+    #[test]
+    fn a_bare_name_absent_from_path_is_still_reported_missing() {
+        let spec = ShellSpec::Program(PathBuf::from("siskin-definitely-not-installed"));
         assert!(matches!(spec.resolve(), Err(ShellError::MissingProgram(_))));
     }
 

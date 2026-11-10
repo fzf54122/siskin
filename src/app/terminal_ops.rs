@@ -44,18 +44,24 @@ impl SiskinApp {
     pub(crate) fn scroll_page(&mut self, up: bool) {
         let rows = self.session().rows as i32;
         let delta = if up { rows } else { -rows };
+        let colors = self.ansi();
         self.session_mut().scroll(delta);
+        self.session_mut().refresh(&colors);
     }
 
     pub(crate) fn scroll_to_top(&mut self) {
+        let colors = self.ansi();
         self.session_mut().scroll(i32::from(i16::MAX));
         // 跳到边界时清掉亚行余量，否则贴顶仍留着半行偏移。
         self.session_mut().scroll_offset.snap_to_top();
+        self.session_mut().refresh(&colors);
     }
 
     pub(crate) fn scroll_to_bottom(&mut self) {
+        let colors = self.ansi();
         self.session_mut().scroll(-i32::from(i16::MAX));
         self.session_mut().scroll_offset.snap_to_bottom();
+        self.session_mut().refresh(&colors);
     }
 
     /// 打开搜索条。已有查询词时保留，便于连续查找。

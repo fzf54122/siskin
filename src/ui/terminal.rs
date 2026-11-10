@@ -231,18 +231,14 @@ impl SiskinApp {
         }
         self.drag = Some((row as f32, column as f32));
         self.session_mut().clear_selection();
-        if let Some(pty) = self.session_mut().pty_mut() {
-            pty.select(row, column);
-        }
+        self.session_mut().select(row, column);
     }
 
     /// 拖动中延长选区；没有按下时把移动事件转成鼠标上报。
     fn drag_to(&mut self, position: gpui::Point<gpui::Pixels>) {
         let (row, column) = self.cell_at(position);
         if self.drag.is_some() {
-            if let Some(pty) = self.session_mut().pty_mut() {
-                pty.update_selection(row, column);
-            }
+            self.session_mut().update_selection(row, column);
             return;
         }
         self.forward_mouse(row, column, 3, true, false);

@@ -39,6 +39,7 @@ tab 带状态点（运行中 / 启动中 / 失败 / 已退出），跟随当前�
 - 中文输入法组词、候选框跟随光标；提交前不写入 PTY。
 - 鼠标拖选复制到 PRIMARY，`Ctrl+Shift+C/V` 走系统剪贴板，多行粘贴不会自动执行。
 - 滚轮按像素平滑滚动；`Shift+PageUp/PageDown` 回看滚动区，`Shift+End` 贴回底部。
+- 终端文本整形使用有界 LRU 缓存，按文本、字体、样式、字号、scale 与颜色隔离。
 - `Ctrl+Click` 打开 OSC 8 超链接，或输出里的路径与 `path:line:col`。
 - 自定义主题的文字颜色按 WCAG 4.5 校正后才生效，不会把终端设成看不见。
 - 主题、字体、Shell、字号改完立即生效并保存。
@@ -221,6 +222,7 @@ src/
 ├── ui/                GPUI 视图
 │   ├── mod.rs         Render 实现、字体度量
 │   ├── grid/          自定义 Element：inputs / runs / shape / cursor
+│   │                  cache/（有界整形缓存与测试）、paint（一行绘制）、element（元素生命周期）
 │   ├── terminal.rs    终端卡片、鼠标选区、输入法、滚轮
 │   ├── sidebar.rs     会话 tab 条（终端页唯一的常驻条）
 │   ├── workspace.rs / inspector.rs / palette.rs / preview.rs

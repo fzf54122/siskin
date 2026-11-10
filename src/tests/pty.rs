@@ -9,6 +9,7 @@
 use std::time::{Duration, Instant};
 
 use crate::domain::session::SessionSpec;
+use crate::domain::shell_spec::ShellKind;
 use crate::io::ansi::AnsiColors;
 use crate::io::pty::Pty;
 use crate::io::vt::{ScreenSize, VtEvent};
@@ -139,4 +140,61 @@ fn a_missing_shell_is_reported_before_spawning() {
         &[],
     );
     assert!(result.is_err());
+}
+
+/// 脏帧标记的契约。`drain_events` 每轮只刷新被标记的会话，
+/// 否则多会话场景下，每轮都会为所有会话白构一次 Frame。
+/// 这里直接验证「标记 → 跳过」的规则，不依赖异步时序。
+#[test]
+fn only_sessions_with_a_pty_are_marked_dirty() {
+    use crate::app::{Session, Sessions};
+
+    let mut set = Sessions::new(Session::starting(7, "输出会话", ShellKind::Sh));
+    set.add(Session::starting(8, "空闲会话", ShellKind::Sh));
+    for index in 0..set.len() {
+        set.get_mut(index).expect("下标有效").mark_output();
+    }
+    // 没有 PTY 的会话不该被标记，否则每轮都会为它白构一次帧。
+    assert!(!set.get(0).expect("下标有效").frame_dirty());
+    assert!(!set.get(1).expect("下标有效").frame_dirty());
+}
+
+/// 派生后的会话：有输出就该置脏，构帧后清除。
+/// 这条走真实 PTY，验证 `mark_output` 与 `refresh` 在真实会话上闭环。
+#[test]
+fn a_running_session_is_marked_and_cleared_on_refresh() {
+    let spec = SessionSpec::command(
+        "test",
+        std::path::PathBuf::from("/bin/sh"),
+        vec!["-c".into(), "sleep 2".into()],
+    );
+    let palette = AnsiColors::from_palette(&PAPER);
+    let mut session = crate::app::Session::starting(4, "真实会话", ShellKind::Sh);
+    let (sender, receiver) = async_channel::unbounded();
+    session
+        .spawn_spec(&spec, sender, 0)
+        .expect("测试环境必须能派生 PTY");
+    session.mark_output();
+    assert!(session.frame_dirty(), "有 PTY 且收到输出就该置脏");
+    session.refresh(&palette);
+    assert!(!session.frame_dirty(), "构帧后必须清除，否则下一轮重复构帧");
+    assert!(!session.frame.rows.is_empty(), "构帧后应有网格内容");
+    drop(receiver);
+}
+
+/// 派生失败时不该置脏标记，否则每轮都会为一个没有 PTY 的会话构帧。
+#[test]
+fn a_failed_spawn_leaves_the_frame_clean() {
+    let spec = SessionSpec::command(
+        "test",
+        std::path::PathBuf::from("/nonexistent/shell"),
+        Vec::new(),
+    );
+    let mut session = crate::app::Session::starting(11, "失败会话", ShellKind::Sh);
+    let (sender, _receiver) = async_channel::unbounded();
+    assert!(session.spawn_spec(&spec, sender, 0).is_err());
+    session.mark_output();
+    assert!(!session.frame_dirty(), "派生失败的会话不该被标记为脏");
+    session.refresh(&AnsiColors::from_palette(&PAPER));
+    assert!(!session.frame_dirty());
 }

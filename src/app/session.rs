@@ -35,6 +35,8 @@ pub(crate) struct Session {
     pub rows: usize,
     /// 平滑滚动的亚行余量。整行由 PTY 持有，余量只活在渲染层。
     pub scroll_offset: crate::domain::ScrollOffset,
+    /// 最近一轮事件是否有输出。只在有 PTY 时置位，见 `mark_output`。
+    frame_dirty: bool,
 }
 
 impl Session {
@@ -52,6 +54,7 @@ impl Session {
             columns: INITIAL_COLUMNS,
             rows: INITIAL_ROWS,
             scroll_offset: crate::domain::ScrollOffset::default(),
+            frame_dirty: false,
         }
     }
 
@@ -112,10 +115,6 @@ impl Session {
         self.pty.as_ref()
     }
 
-    pub(crate) fn pty_mut(&mut self) -> Option<&mut Pty> {
-        self.pty.as_mut()
-    }
-
     pub(crate) fn write(&mut self, bytes: &[u8]) {
         if let Some(pty) = self.pty.as_mut() {
             pty.write(bytes);
@@ -131,7 +130,27 @@ impl Session {
     pub(crate) fn refresh(&mut self, colors: &AnsiColors) {
         if let Some(pty) = self.pty.as_ref() {
             self.frame = pty.frame(colors);
+            self.frame_dirty = false;
         }
+    }
+
+    /// 从 PTY 收到输出后调用。构帧由事件轮次的 `refresh` 统一做，
+    /// 这样一轮里多个事件只构一次帧，空闲会话完全不碰锁。
+    pub(crate) fn mark_output(&mut self) {
+        self.mark_frame_dirty();
+    }
+
+    /// 标记当前 Frame 需要重建，覆盖滚动、选区和 resize 这类不经 PTY
+    /// Wakeup 的界面操作。
+    pub(crate) fn mark_frame_dirty(&mut self) {
+        if self.pty.is_some() {
+            self.frame_dirty = true;
+        }
+    }
+
+    /// Frame 是否是最近一轮事件或界面操作后的旧值。
+    pub(crate) fn frame_dirty(&self) -> bool {
+        self.frame_dirty
     }
 
     pub(crate) fn resize(&mut self, columns: usize, rows: usize) {
@@ -142,6 +161,7 @@ impl Session {
         self.rows = rows.max(1);
         if let Some(pty) = self.pty.as_mut() {
             pty.resize(ScreenSize::new(self.columns, self.rows, SCROLLBACK_LINES));
+            self.frame_dirty = true;
         }
     }
 
@@ -155,6 +175,7 @@ impl Session {
     pub(crate) fn scroll(&mut self, delta: i32) {
         if let Some(pty) = self.pty.as_mut() {
             pty.scroll(delta);
+            self.frame_dirty = true;
         }
     }
 
@@ -166,6 +187,7 @@ impl Session {
             && let Some(pty) = self.pty.as_mut()
         {
             pty.scroll(lines);
+            self.frame_dirty = true;
         }
         // 只要有位移（哪怕没凑满一行）就该重绘，否则亚行平移不连续。
         pixels != 0.
@@ -183,6 +205,21 @@ impl Session {
     pub(crate) fn clear_selection(&mut self) {
         if let Some(pty) = self.pty.as_mut() {
             pty.clear_selection();
+            self.frame_dirty = true;
+        }
+    }
+
+    pub(crate) fn select(&mut self, row: isize, column: usize) {
+        if let Some(pty) = self.pty.as_mut() {
+            pty.select(row, column);
+            self.frame_dirty = true;
+        }
+    }
+
+    pub(crate) fn update_selection(&mut self, row: isize, column: usize) {
+        if let Some(pty) = self.pty.as_mut() {
+            pty.update_selection(row, column);
+            self.frame_dirty = true;
         }
     }
 }

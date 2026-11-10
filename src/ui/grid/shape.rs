@@ -33,6 +33,8 @@ pub(super) fn text_style(family: &SharedString, style: CellStyle) -> (Font, gpui
 
 /// 一段文本按自身推进量整形，保留连字；不强制等宽，
 /// 否则 CJK 与组合字符会互相重叠。
+///
+/// 直接调用会绕过缓存，只在缓存不可用时（例如锁中毒）才该走到这里。
 pub(super) fn shape_text(
     family: &SharedString,
     text: &str,

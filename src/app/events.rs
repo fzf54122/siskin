@@ -150,7 +150,9 @@ impl SiskinApp {
                         session.write(text.as_bytes());
                     }
                 }
-                VtEvent::Wakeup | VtEvent::Bell => {}
+                // 唤醒意味着这个会话有新字节进了 VT 状态。构帧推迟到
+                // 本轮回合末尾，一轮多个事件只构一次帧。
+                VtEvent::Wakeup | VtEvent::Bell => self.mark_session_output(id),
             }
         }
         let colors = self.ansi();
@@ -160,6 +162,7 @@ impl SiskinApp {
             };
             if let Some(session) = self.sessions.get_mut(index) {
                 session.mark_exited(code);
+                session.mark_output();
             }
             changed = true;
             if self.exit_on_child_exit && index == self.active_index() {
@@ -167,11 +170,25 @@ impl SiskinApp {
             }
         }
         for index in 0..self.sessions.len() {
-            if let Some(session) = self.sessions.get_mut(index) {
+            // 只刷新这一轮真有输出的会话。空闲会话的 Frame 是准确的，
+            // 重新构一次纯属白锁 PTY、白拷贝一帧网格。
+            if let Some(session) = self.sessions.get_mut(index)
+                && session.frame_dirty()
+            {
                 session.refresh(&colors);
+                changed = true;
             }
         }
         changed
+    }
+
+    /// 标记某个会话有新输出。会话已关闭时静默忽略：关闭与事件可能并发。
+    fn mark_session_output(&mut self, id: u64) {
+        if let Some(index) = self.sessions.position(id)
+            && let Some(session) = self.sessions.get_mut(index)
+        {
+            session.mark_output();
+        }
     }
 
     /// OSC 0/2 标题。只影响窗口标题与标题栏副标题，不改会话名：

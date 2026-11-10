@@ -11,8 +11,11 @@
 //!
 //! 只整形可视行：滚动过的历史行不参与，这是 10 万行 scrollback 下的前提。
 
+mod cache;
 mod cursor;
+mod element;
 mod inputs;
+mod paint;
 mod runs;
 mod shape;
 
@@ -20,10 +23,7 @@ pub(crate) use inputs::GridInputs;
 
 use std::sync::{Arc, Mutex};
 
-use gpui::{
-    App, Bounds, Element, ElementId, GlobalElementId, InspectorElementId, IntoElement, LayoutId,
-    Pixels, Point, SharedString, Size, Style, TextAlign, Window, fill, point, px, relative, size,
-};
+use gpui::{Bounds, IntoElement, Pixels, Point, SharedString, Size, Window, point, px, size};
 
 use crate::domain::RenderMetrics;
 use crate::io::search::MatchSpan;
@@ -135,7 +135,7 @@ impl TerminalGrid {
         style: CellStyle,
         window: &mut Window,
     ) -> Arc<gpui::ShapedLine> {
-        shape::shape_text(&self.font, text, style, self.metrics.font_size, window)
+        cache::shape_cached(&self.font, text, style, self.metrics.font_size, window)
     }
 
     fn background_span(
@@ -209,25 +209,37 @@ impl TerminalGrid {
         }
     }
 
-    /// 选区用逐格背景矩形表达，跨 run 也连续。
+    /// 选区背景。相邻且同为选区底色的格子合成一个矩形，
+    /// 一次绘制任务覆盖整段选区，而不是每格一个矩形。
     fn selection_spans(
         &self,
         row: usize,
         line: &crate::io::vt::RowView,
         origin: Point<Pixels>,
     ) -> Vec<(Point<Pixels>, Size<Pixels>, u32)> {
-        line.cells
-            .iter()
-            .enumerate()
-            .filter(|(_, cell)| cell.selected)
-            .map(|(column, _)| {
-                (
-                    self.cell_origin(origin, row, column),
-                    size(px(self.metrics.cell_width), px(self.metrics.row_height)),
-                    self.selection_bg,
-                )
-            })
+        selection_ranges(line)
+            .into_iter()
+            .map(|(start, end)| self.selection_span(row, start, end, origin))
             .collect()
+    }
+
+    /// 一段连续选区的矩形。`end` 是右开列。
+    fn selection_span(
+        &self,
+        row: usize,
+        start: usize,
+        end: usize,
+        origin: Point<Pixels>,
+    ) -> (Point<Pixels>, Size<Pixels>, u32) {
+        let width = (end.saturating_sub(start).max(1)) as f32;
+        (
+            self.cell_origin(origin, row, start),
+            size(
+                px(width * self.metrics.cell_width),
+                px(self.metrics.row_height),
+            ),
+            self.selection_bg,
+        )
     }
 
     /// 搜索高亮：普通匹配用半透明强调色，当前匹配用更实的底色。
@@ -285,105 +297,69 @@ impl IntoElement for TerminalGrid {
     }
 }
 
-impl Element for TerminalGrid {
-    type RequestLayoutState = ();
-    type PrepaintState = Vec<RowLayout>;
-
-    fn id(&self) -> Option<ElementId> {
-        self.debug_id.map(|id| ElementId::from(id.to_string()))
-    }
-
-    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
-        None
-    }
-
-    fn request_layout(
-        &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> (LayoutId, Self::RequestLayoutState) {
-        let mut style = Style::default();
-        style.size.width = relative(1.).into();
-        style.size.height = relative(1.).into();
-        (window.request_layout(style, None, cx), ())
-    }
-
-    fn prepaint(
-        &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
-        _request_layout: &mut Self::RequestLayoutState,
-        window: &mut Window,
-        _cx: &mut App,
-    ) -> Self::PrepaintState {
-        // 亚行平移只作用于绘制偏移；存进 `origin_slot` 的必须是未平移的锚点，
-        // 否则鼠标换算会把整帧位移算进行列，点击随滚动一起漂。
-        let anchor = bounds.origin + point(px(self.metrics.padding), px(self.metrics.padding));
-        let origin = anchor + point(px(0.), px(self.offset_y));
-        let visible_rows = (((bounds.size.height.as_f32() - self.metrics.padding * 2.)
-            / self.metrics.row_height)
-            .floor() as usize)
-            .max(1)
-            + 1;
-        let layouts = (0..self.frame.rows.len().min(visible_rows))
-            .map(|row| self.shape_row(row, origin, window))
-            .collect();
-        self.store_cursor(origin, bounds.origin);
-        layouts
-    }
-
-    fn paint(
-        &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
-        _request_layout: &mut Self::RequestLayoutState,
-        layouts: &mut Self::PrepaintState,
-        window: &mut Window,
-        cx: &mut App,
-    ) {
-        window.paint_quad(fill(bounds, to_hsla(self.palette_bg)));
-        for row in layouts.iter() {
-            for (position, extent, color) in &row.backgrounds {
-                window.paint_quad(fill(Bounds::new(*position, *extent), to_hsla(*color)));
-            }
-            for (position, line) in &row.runs {
-                let _ = line.paint(
-                    *position,
-                    px(self.metrics.row_height),
-                    TextAlign::Left,
-                    None,
-                    window,
-                    cx,
-                );
-            }
-            // OSC 8 链接底线。画在单元格底部而不是贴基线的位置，
-            // 这样和程序自己用 SGR 4 画的下划线观感一致。
-            for (position, width) in &row.underlines {
-                let baseline = position.y + px(self.metrics.row_height) - px(2.);
-                window.paint_quad(fill(
-                    Bounds::new(point(position.x, baseline), size(*width, px(1.))),
-                    to_hsla(self.link_color),
-                ));
-            }
+/// 一行的连续选区列区间。相邻的选中格子合成一段，`end` 右开。
+/// 合并让一次绘制任务覆盖整段选区，80 列全选从 80 个矩形降到 1 个。
+pub(crate) fn selection_ranges(line: &crate::io::vt::RowView) -> Vec<(usize, usize)> {
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    let mut run: Option<(usize, usize)> = None;
+    for (column, cell) in line.cells.iter().enumerate() {
+        if cell.selected {
+            run = Some(match run {
+                Some((start, _)) => (start, column),
+                None => (column, column),
+            });
+            continue;
         }
-        // 输入法通过这个 handler 拿到预编辑串与候选框锚点；必须在 paint 阶段注册。
-        window.handle_input(
-            &self.focus,
-            gpui::ElementInputHandler::new(bounds, self.view.clone()),
-            cx,
+        if let Some((start, end)) = run.take() {
+            ranges.push((start, end + 1));
+        }
+    }
+    if let Some((start, end)) = run.take() {
+        ranges.push((start, end + 1));
+    }
+    ranges
+}
+
+#[cfg(test)]
+mod tests {
+    use super::selection_ranges;
+    use crate::io::vt::{CellStyle, CellView, RowView};
+
+    fn cell(selected: bool) -> CellView {
+        CellView {
+            text: "x".into(),
+            style: CellStyle::default(),
+            spacer: false,
+            selected,
+            link: None,
+        }
+    }
+
+    fn row(selected: &[bool]) -> RowView {
+        RowView {
+            cells: selected.iter().map(|flag| cell(*flag)).collect(),
+        }
+    }
+
+    #[test]
+    fn contiguous_selected_cells_become_a_single_range() {
+        // 8 列全选：一段。合并前这是 8 个绘制任务。
+        assert_eq!(selection_ranges(&row(&[true; 8])), vec![(0, 8)]);
+        // 中间断开：两段，[0,2) 与 [3,5)。
+        assert_eq!(
+            selection_ranges(&row(&[true, true, false, true, true])),
+            vec![(0, 2), (3, 5)]
         );
-        cursor::paint_cursor(
-            self.frame.cursor,
-            self.metrics,
-            bounds.origin + point(px(self.metrics.padding), px(self.metrics.padding)),
-            self.cursor_color,
-            self.palette_fg,
-            self.cursor_focused,
-            window,
+        // 行首没有选区：第一段从第 1 列开始。
+        assert_eq!(selection_ranges(&row(&[false, true, true])), vec![(1, 3)]);
+        // 选区顶到行尾：尾段必须闭合，否则最后一列画不出来。
+        assert_eq!(
+            selection_ranges(&row(&[false, true, true, true])),
+            vec![(1, 4)]
         );
+        // 全不选：一段都没有。
+        assert_eq!(selection_ranges(&row(&[false; 5])), Vec::new());
+        // 空行：无段。
+        assert_eq!(selection_ranges(&RowView { cells: Vec::new() }), Vec::new());
     }
 }
