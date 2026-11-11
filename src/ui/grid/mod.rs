@@ -71,6 +71,8 @@ pub(crate) struct TerminalGrid {
     metrics: RenderMetrics,
     font: SharedString,
     palette_bg: u32,
+    /// 见 `GridInputs::bg_alpha`：底色矩形的 alpha，玻璃关时为 1。
+    bg_alpha: f32,
     palette_fg: u32,
     selection_bg: u32,
     /// 非当前匹配的底色。
@@ -104,6 +106,7 @@ impl TerminalGrid {
             metrics: inputs.metrics,
             font: inputs.font,
             palette_bg: inputs.palette_bg,
+            bg_alpha: inputs.bg_alpha,
             palette_fg: inputs.palette_fg,
             selection_bg: inputs.selection_bg,
             highlight_bg: inputs.highlight_bg,

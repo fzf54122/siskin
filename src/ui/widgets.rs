@@ -7,6 +7,25 @@ use gpui::{HighlightStyle, Hsla, StyledText};
 
 use super::*;
 
+/// 玻璃浮层顶部高光线：1px 半透明白线，贴在浮层顶边内侧。
+/// 浮层本身要 `relative`（或本身已定位），这条线盖在填充之上，
+/// 在深色底/深色桌面透过来时读得最清楚。
+pub(super) fn glass_top_highlight() -> Div {
+    div()
+        .absolute()
+        .top(px(0.))
+        .left(px(0.))
+        .right(px(0.))
+        .h(px(1.))
+        .bg(rgba(theme::glass::GLASS_HIGHLIGHT_RGBA))
+}
+
+/// 玻璃浮层的亮边色：深色主题 32% 白、浅色 18% 黑，见
+/// `theme::glass::glass_edge_rgba`。
+pub(super) fn glass_edge(p: &Palette) -> u32 {
+    theme::glass::glass_edge_rgba(p.dark)
+}
+
 pub(super) fn label(value: impl Into<SharedString>, color: u32) -> Div {
     div()
         .text_size(px(14.))

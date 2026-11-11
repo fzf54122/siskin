@@ -89,9 +89,9 @@ impl Render for SiskinApp {
             .font_family(self.ui.clone())
             .text_size(px(14.))
             .text_color(rgb(palette.ink))
-            // 玻璃画布：开着时整窗按玻璃透度半透明，桌面内容从背后透
-            // 出来；关掉即实色画布。终端区另用 `palette.terminal` 实底
-            // 遮挡，保证输出可读——玻璃只做在 chrome/浮层上。
+            // 玻璃画布：开着时整窗按玻璃透度半透明；终端底另按
+            // 终端下限 0.92 透，文字仍不透明画在上面（验算见
+            // `theme::glass`）。关掉玻璃即全窗实色。
             .bg(rgba(self.settings.glass_fill(palette.canvas)))
             .child(
                 div()
@@ -128,6 +128,7 @@ impl SiskinApp {
     /// 不显示终端内容、命令或剪贴板。数字来自最近 600 帧窗口。
     fn perf_overlay(&self, palette: &Palette) -> Stateful<Div> {
         let text = crate::domain::perf::summary().one_line();
+        let bg = self.settings.glass_surface(palette.window, palette.dark);
         div()
             .id("perf-overlay")
             .debug_selector(|| "perf-overlay".into())
@@ -137,9 +138,9 @@ impl SiskinApp {
             .px(px(10.))
             .py(px(6.))
             .rounded(px(6.))
-            .bg(rgba(self.settings.glass_fill(palette.window)))
+            .bg(rgba(bg))
             .border_1()
-            .border_color(rgb(palette.border))
+            .border_color(rgba(glass_edge(palette)))
             .text_size(px(11.))
             .text_color(rgb(palette.ink))
             .child(text)

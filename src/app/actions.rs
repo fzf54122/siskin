@@ -84,14 +84,14 @@ pub(crate) static PALETTE_ENTRIES: [PaletteEntry; 39] = [
     PaletteEntry {
         label: "玻璃效果开/关",
         keywords: "glass blur frosted transparency glassmorphism 磨砂 玻璃 模糊 透明",
-        hint: "浮层用半透明磨砂底，关闭回到实色；终端主区始终实底",
+        hint: "整窗玻璃：终端底也透出桌面（不低于 0.92），关闭回到实色",
         keys: "Ctrl Shift G",
         action: Action::ToggleGlass,
     },
     PaletteEntry {
         label: "玻璃透度",
         keywords: "glass opacity transparency 磨砂 透度 不透明度",
-        hint: "标准 / 较浓 / 浓郁三档循环，均按 4.5:1 校验过对比度",
+        hint: "标准 / 较浓 / 浓郁三档循环，均按 4.5:1 校验过对比度；终端底不低于 0.92",
         keys: "",
         action: Action::CycleGlassOpacity,
     },

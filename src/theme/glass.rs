@@ -3,7 +3,7 @@
 // @FileName: glass.rs
 // @Software: Siskin
 
-//! 磨砂玻璃：浮层与侧栏的半透明底色。
+//! 磨砂玻璃：浮层、侧栏与终端主区的半透明底色。
 //!
 //! 核实结论（全文见 `docs/glass.md`）：
 //! - GPUI 没有逐元素的 backdrop blur，只有窗口级
@@ -13,13 +13,27 @@
 //! - X11 下 `Blurred` 与 `Transparent` 等价，只开透明不请求模糊；
 //! - pulse-ui v0.1.1 没有任何 blur / backdrop / glass 接口。
 //!
-//! 所以玻璃是「半透明填充 + 细边框 + 分层透度」的近似，只在 KDE
-//! Plasma Wayland 上能叠加一道真模糊；终端主区始终实底，不参与。
+//! 所以玻璃是「半透明填充 + 磨砂 tint + 亮边/顶光/阴影」的近似，只
+//! 在 KDE Plasma Wayland 上能叠加一道真模糊。整窗玻璃：终端主区
+//! 也参与，底色透出桌面壁纸（Ghostty 的 background-opacity 那
+//! 种做法），不再是只有浮层透、主区实底。
 //!
 //! 透度下限不是拍脑袋的：对六套预设逐套验算，0.75 时 Paper 的浮层
 //! 文字只有 4.34:1、Moss 的侧栏次要文字只有 4.30:1，都跌破 WCAG
 //! 4.5:1；0.80 时 Paper 只剩 4.50 零余量；0.85 起最差组合 4.67:1
-//! 才有余量。因此下限就是 0.85，三档是 0.85 / 0.90 / 0.95。
+//! 才有余量。因此浮层下限就是 0.85，三档是 0.85 / 0.90 / 0.95。
+//!
+//! 终端底另有更高的下限 0.92：终端文字直接盖在未知壁纸上，浅色
+//! 主题的次要文字（`muted`）在 0.85 黑桌面下只有 4.08:1，0.90
+//! 时 4.61 余量仍薄，0.92 起最差组合（Paper 的 `muted` 盖黑桌
+//! 面）为 4.83:1。0.85/0.90 两档的终端底都按 0.92 画，浮层仍
+//! 按所选档画；叠加最坏情况（浮层 0.85 + 整屏遮罩 + 终端底
+//! 0.92 + 纯黑桌面）Paper 的报错文字为 4.58:1，仍在 4.5 之上。
+//!
+//! 磨砂 tint 只做在深色主题上：深色浮层底往白提 10%，肉眼可见
+//! 又不伤对比度（最差组合仍在 5.0:1 之上）；浅色主题不压暗，
+//! Paper 的浮层报错文字在 0.85 档本来就只有 4.58:1，任何压暗
+//! 都会跌破 4.5:1，浅色玻璃的“边”靠亮边、顶光与阴影来读。
 
 #[cfg(test)]
 use super::colors::{contrast, mix};
@@ -30,6 +44,17 @@ pub const GLASS_OPACITY_MIN: f32 = 0.85;
 
 /// 浮层底色不透明度上限。再浓就和实色没有区别。
 pub const GLASS_OPACITY_MAX: f32 = 0.95;
+
+/// 终端底色不透明度下限，高于浮层下限：终端文字直接盖在未知
+/// 壁纸上，`muted` 在 0.85 黑桌面下只有 4.08:1（见模块头）。
+pub const GLASS_TERMINAL_OPACITY_MIN: f32 = 0.92;
+
+/// 深色浮层底往白提的幅度：0x1e222b 提后约 0x353840，肉眼可见
+/// 的磨砂感，又不伤对比度（单测里逐套断言）。
+pub const GLASS_TINT_DARK: f32 = 0.10;
+
+/// 浮层顶部高光线：白色 35% 透度，1px，画在浮层填充之上。
+pub const GLASS_HIGHLIGHT_RGBA: u32 = 0xffff_ff59;
 
 /// 默认透度：最通透且仍满足对比度的一档。
 pub const GLASS_OPACITY_DEFAULT: f32 = 0.85;
@@ -74,6 +99,29 @@ pub fn nearest_step(opacity: f32) -> usize {
     best
 }
 
+/// 终端底实际用的不透明度：浮层档位再通透，终端底也不低于
+/// `GLASS_TERMINAL_OPACITY_MIN`。玻璃关闭时调用方直接用 1.0，
+/// 这里只管开启时的下限。
+pub fn terminal_opacity(opacity: f32) -> f32 {
+    clamp_opacity(opacity).max(GLASS_TERMINAL_OPACITY_MIN)
+}
+
+/// 磨砂 tint：深色底往白提 `GLASS_TINT_DARK`，浅色底原样返回
+/// （见模块头：浅色再压暗就跌破 4.5:1）。
+pub fn tinted_surface(color: u32, dark: bool) -> u32 {
+    if dark {
+        super::colors::mix(color, 0xffffff, GLASS_TINT_DARK)
+    } else {
+        color
+    }
+}
+
+/// 浮层亮边色（`0xRRGGBBAA`）：深色主题用 32% 白，浅色用 18%
+/// 黑——在各自底色上都是一道读得出的细边，又不至于像描边。
+pub fn glass_edge_rgba(dark: bool) -> u32 {
+    if dark { 0xffff_ff52 } else { 0x0000_002e }
+}
+
 /// 玻璃填充色：`0xRRGGBBAA`，直接喂 `gpui::rgba`。
 /// 关掉玻璃时 alpha 恒为 0xFF，即实色，与不透明底完全一致。
 pub fn fill_rgba(enabled: bool, opacity: f32, color: u32) -> u32 {
@@ -83,6 +131,25 @@ pub fn fill_rgba(enabled: bool, opacity: f32, color: u32) -> u32 {
         0xff
     };
     (color << 8) | alpha
+}
+
+/// 浮层玻璃填充色：先按主题磨砂 tint，再按透度给 alpha；
+/// 关掉玻璃时 tint 也不做，回到实色底。
+pub fn surface_rgba(enabled: bool, opacity: f32, color: u32, dark: bool) -> u32 {
+    if enabled {
+        fill_rgba(true, opacity, tinted_surface(color, dark))
+    } else {
+        fill_rgba(false, opacity, color)
+    }
+}
+
+/// 终端底玻璃填充色：透度按终端下限 0.92 抬高，其余与浮层一致。
+pub fn terminal_fill_rgba(enabled: bool, opacity: f32, color: u32) -> u32 {
+    if enabled {
+        fill_rgba(true, terminal_opacity(opacity), color)
+    } else {
+        fill_rgba(false, opacity, color)
+    }
 }
 
 /// `surface` 以 `opacity` 盖在 `backdrop` 上之后的有效底色。
@@ -133,6 +200,82 @@ mod tests {
     }
 
     #[test]
+    fn terminal_opacity_floors_at_0_92() {
+        assert_eq!(terminal_opacity(0.85), GLASS_TERMINAL_OPACITY_MIN);
+        assert_eq!(terminal_opacity(0.90), GLASS_TERMINAL_OPACITY_MIN);
+        assert_eq!(terminal_opacity(0.95), 0.95);
+        assert_eq!(terminal_opacity(2.), 0.95);
+    }
+
+    #[test]
+    fn tint_lifts_dark_surfaces_and_leaves_light_ones_alone() {
+        assert_eq!(tinted_surface(0x1e222b, true), 0x353840);
+        assert_eq!(tinted_surface(0xffffff, false), 0xffffff);
+        assert_eq!(surface_rgba(true, 0.85, 0x1e222b, true), 0x35_38_40_d9);
+        assert_eq!(surface_rgba(false, 0.85, 0x1e222b, true), 0x1e_22_2b_ff);
+        assert_eq!(terminal_fill_rgba(true, 0.85, 0x14171d), 0x14_17_1d_eb);
+        assert_eq!(terminal_fill_rgba(false, 0.85, 0x14171d), 0x14_17_1d_ff);
+    }
+
+    /// 0.85 的终端底保不住次要文字：Paper/Moss 的 `muted` 在纯
+    /// 黑桌面上只有 4.08:1——这就是终端下限抬到 0.92 的原因，
+    /// 不是拍脑袋，改动这个断言前先重算。
+    #[test]
+    fn terminal_opacity_0_85_fails_muted_on_a_black_desktop() {
+        let paper = Palette::of(ThemeId::Paper);
+        assert!(text_contrast(paper.muted, paper.terminal, 0.85, 0x000000) < MINIMUM_CONTRAST);
+        assert!(text_contrast(paper.muted, paper.terminal, 0.90, 0x000000) >= MINIMUM_CONTRAST);
+    }
+
+    /// 终端文字对比度：三档透度换算成终端实际透度后 × 六套预设，
+    /// 主文字与次要文字盖在纯黑/纯白桌面上都要达标。
+    #[test]
+    fn terminal_text_stays_readable_over_any_desktop() {
+        for theme in ThemeId::PRESETS {
+            let palette = Palette::of(theme);
+            for (opacity, _) in GLASS_OPACITY_STEPS {
+                let effective = terminal_opacity(opacity);
+                for desktop in [0x000000, 0xffffff] {
+                    for foreground in [palette.ink, palette.muted] {
+                        let ratio = text_contrast(foreground, palette.terminal, effective, desktop);
+                        assert!(
+                            ratio >= MINIMUM_CONTRAST,
+                            "{} #{foreground:06x} 终端文字（浮层档 {opacity}→终端 {effective}）：{ratio:.2}",
+                            palette.id.name()
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// 叠加最坏情况：浮层 0.85 + 整屏遮罩 + 终端底 0.92 + 纯黑
+    /// 桌面。Paper 的报错文字 4.58:1，余量薄但仍在 4.5 之上。
+    #[test]
+    fn stacked_glass_layers_stay_readable() {
+        let scrim_color = GLASS_SCRIM_RGBA >> 8;
+        let scrim_alpha = (GLASS_SCRIM_RGBA & 0xff) as f32 / 255.;
+        for theme in ThemeId::PRESETS {
+            let palette = Palette::of(theme);
+            let surface = tinted_surface(palette.window, palette.dark);
+            for desktop in [0x000000, 0xffffff] {
+                let terminal = composite_over(palette.terminal, terminal_opacity(0.85), desktop);
+                let scrimmed = composite_over(scrim_color, scrim_alpha, terminal);
+                for backdrop in [terminal, scrimmed] {
+                    for foreground in [palette.ink, palette.muted, palette.accent, palette.error] {
+                        let ratio = text_contrast(foreground, surface, 0.85, backdrop);
+                        assert!(
+                            ratio >= MINIMUM_CONTRAST,
+                            "{} #{foreground:06x} 叠加玻璃（黑白桌面）：{ratio:.2}",
+                            palette.id.name()
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn fill_alpha_follows_opacity_and_is_opaque_when_disabled() {
         let color = 0x1e222b;
         assert_eq!(fill_rgba(true, 0.85, color), 0x1e_22_2b_d9);
@@ -172,9 +315,11 @@ mod tests {
         let scrim_color = GLASS_SCRIM_RGBA >> 8;
         let scrim_alpha = (GLASS_SCRIM_RGBA & 0xff) as f32 / 255.;
         let scrimmed = composite_over(scrim_color, scrim_alpha, palette.terminal);
+        // 浮层按 tint 后的底色验算（深色提亮会吃掉一点对比度）。
+        let surface = tinted_surface(palette.window, palette.dark);
         for backdrop in [palette.terminal, scrimmed] {
             for foreground in [palette.ink, palette.muted, palette.accent, palette.error] {
-                let ratio = text_contrast(foreground, palette.window, opacity, backdrop);
+                let ratio = text_contrast(foreground, surface, opacity, backdrop);
                 assert!(
                     ratio >= MINIMUM_CONTRAST,
                     "{name} #{foreground:06x} 玻璃浮层（透度 {opacity}）：{ratio:.2}"
@@ -182,10 +327,12 @@ mod tests {
             }
         }
         // 侧栏文字（ink / muted）：画布 + 桌面两层叠加，桌面取黑白两端。
+        // 侧栏底色同样按 tint 后的值验算。
+        let sidebar = tinted_surface(palette.sidebar, palette.dark);
         for desktop in [0x000000, 0xffffff] {
             let canvas = composite_over(palette.canvas, opacity, desktop);
             for foreground in [palette.ink, palette.muted] {
-                let ratio = text_contrast(foreground, palette.sidebar, opacity, canvas);
+                let ratio = text_contrast(foreground, sidebar, opacity, canvas);
                 assert!(
                     ratio >= MINIMUM_CONTRAST,
                     "{name} #{foreground:06x} 玻璃侧栏（透度 {opacity}）：{ratio:.2}"

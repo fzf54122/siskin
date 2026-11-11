@@ -40,13 +40,13 @@ impl SiskinApp {
                     .child(group_heading("玻璃效果", "", p))
                     .child(form_row(
                         "玻璃效果",
-                        "浮层（命令面板、搜索条、侧栏、弹窗）用半透明磨砂底，终端主区始终实底。KDE Plasma Wayland 下窗口背后真模糊，其余桌面为半透明近似。",
+                        "整窗玻璃：终端底色也透出桌面壁纸（终端底不低于 0.92 不透明度，保住文字对比度），浮层（命令面板、搜索条、侧栏、弹窗）用磨砂半透明底。KDE Plasma Wayland 下窗口背后真模糊，其余桌面为半透明近似。",
                         self.glass_toggle_control(p, cx),
                         p,
                     ))
                     .child(form_row(
                         "玻璃透度",
-                        "浮层底色不透明度；三档均按 WCAG 4.5:1 校验过文字对比度。关闭玻璃效果时暂不生效。",
+                        "浮层底色不透明度；三档均按 WCAG 4.5:1 校验过文字对比度。终端底不低于 0.92，不随最通透那档走。关闭玻璃效果时暂不生效。",
                         self.glass_opacity_control(p, cx),
                         p,
                     )),

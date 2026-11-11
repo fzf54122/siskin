@@ -11,7 +11,15 @@ use gpui::{
     Window, fill, point, px, relative,
 };
 
-use super::{RowLayout, TerminalGrid, cursor, paint, to_hsla};
+use super::{RowLayout, TerminalGrid, cursor, paint};
+
+/// 带 alpha 的底色：只用于终端底色矩形——整窗玻璃开着时底色
+/// 半透明，桌面从背后透出来；其余元素（文字、选区、光标）仍
+/// 按 `to_hsla` 不透明画，可读性不受影响。
+fn to_hsla_alpha(color: u32, alpha: f32) -> gpui::Hsla {
+    let alpha = (alpha.clamp(0., 1.) * 255.).round() as u32;
+    gpui::rgba((color << 8) | alpha).into()
+}
 
 impl Element for TerminalGrid {
     type RequestLayoutState = ();
@@ -84,7 +92,7 @@ impl Element for TerminalGrid {
         window: &mut Window,
         cx: &mut App,
     ) {
-        window.paint_quad(fill(bounds, to_hsla(self.palette_bg)));
+        window.paint_quad(fill(bounds, to_hsla_alpha(self.palette_bg, self.bg_alpha)));
         for row in layouts.iter() {
             paint::row_backgrounds(row, window);
             paint::row_runs(row, self.metrics.row_height, window, cx);

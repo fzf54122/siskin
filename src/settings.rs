@@ -53,7 +53,10 @@ impl SettingsSection {
 
 pub const FONT_SIZES: [f32; 5] = [11., 12., 13., 14., 16.];
 
-use crate::theme::glass::{GLASS_OPACITY_DEFAULT, clamp_opacity, fill_rgba, next_opacity};
+use crate::theme::glass::{
+    GLASS_OPACITY_DEFAULT, clamp_opacity, fill_rgba, next_opacity, surface_rgba,
+    terminal_fill_rgba, terminal_opacity,
+};
 
 pub struct Settings {
     pub mode: ThemeMode,
@@ -67,8 +70,8 @@ pub struct Settings {
     pub font_index: usize,
     pub font_family: usize,
     pub shell: ShellKind,
-    /// 磨砂玻璃开关，默认开启：只影响命令面板、搜索条、侧栏、弹窗
-    /// 等浮层与 chrome，终端主区始终实底。
+    /// 磨砂玻璃开关，默认开启：整窗玻璃——终端主区底色也透出
+    /// 桌面（下限 0.92），浮层与 chrome 按透度档半透明。
     pub glass: bool,
     /// 浮层底色不透明度，恒在 `GLASS_OPACITY_MIN..=MAX` 内；
     /// 下限 0.85 是六套预设逐套验算后能保住 4.5:1 对比度的最低值。
@@ -152,7 +155,8 @@ impl Settings {
         self.set_mode(self.mode.next(), system_dark);
     }
 
-    /// 玻璃开关：关掉即所有浮层回到实色。
+    /// 玻璃开关：关掉即所有浮层回到实色。终端底玻璃也随开关走，
+    /// 关掉即实色终端底；开着时终端底按终端下限透度透出桌面。
     pub fn toggle_glass(&mut self) {
         self.glass = !self.glass;
     }
@@ -168,9 +172,32 @@ impl Settings {
     }
 
     /// 玻璃填充色（`0xRRGGBBAA`，直接喂 `gpui::rgba`）；关掉玻璃时
-    /// alpha 恒为 0xFF，与原来的实色底完全一致。
+    /// alpha 恒为 0xFF，与原来的实色底完全一致。整窗画布与 tab
+    /// 条之外的 chrome 用这个，不带磨砂 tint。
     pub fn glass_fill(&self, color: u32) -> u32 {
         fill_rgba(self.glass, self.glass_opacity, color)
+    }
+
+    /// 浮层玻璃填充色：深色主题先磨砂 tint 再给 alpha；关掉玻璃
+    /// 时回到实色底。命令面板、搜索条、侧栏、弹窗用这个。
+    pub fn glass_surface(&self, color: u32, dark: bool) -> u32 {
+        surface_rgba(self.glass, self.glass_opacity, color, dark)
+    }
+
+    /// 终端底实际不透明度：玻璃关掉为 1.0（实色），开着时不低于
+    /// 终端下限 0.92（`theme::glass::terminal_opacity`）。
+    pub fn terminal_bg_alpha(&self) -> f32 {
+        if self.glass {
+            terminal_opacity(self.glass_opacity)
+        } else {
+            1.
+        }
+    }
+
+    /// 终端底玻璃填充色（`0xRRGGBBAA`）：终端卡片的 div 底用这个，
+    /// 网格自身的底色矩形另用 `terminal_bg_alpha`（见 grid）。
+    pub fn glass_terminal_fill(&self, color: u32) -> u32 {
+        terminal_fill_rgba(self.glass, self.glass_opacity, color)
     }
 }
 
@@ -251,6 +278,27 @@ mod tests {
         settings.toggle_glass();
         assert!(!settings.glass);
         assert_eq!(settings.glass_fill(0x1e222b), 0x1e_22_2b_ff);
+    }
+
+    #[test]
+    fn glass_terminal_fill_floors_at_0_92_and_is_opaque_when_disabled() {
+        let settings = Settings::default();
+        // 默认档 0.85，终端底抬到 0.92：alpha 0xEB。
+        assert_eq!(settings.terminal_bg_alpha(), 0.92);
+        assert_eq!(settings.glass_terminal_fill(0x14171d), 0x14_17_1d_eb);
+        let mut settings = Settings::default();
+        settings.set_glass_opacity(0.95);
+        assert_eq!(settings.terminal_bg_alpha(), 0.95);
+        settings.toggle_glass();
+        assert_eq!(settings.terminal_bg_alpha(), 1.);
+        assert_eq!(settings.glass_terminal_fill(0x14171d), 0x14_17_1d_ff);
+    }
+
+    #[test]
+    fn glass_surface_tints_dark_themes_only() {
+        let settings = Settings::default();
+        assert_eq!(settings.glass_surface(0x1e222b, true), 0x35_38_40_d9);
+        assert_eq!(settings.glass_surface(0xffffff, false), 0xff_ff_ff_d9);
     }
 
     #[test]

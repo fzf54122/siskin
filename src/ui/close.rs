@@ -22,11 +22,14 @@ impl SiskinApp {
             .child(
                 div()
                     .w(px(420.))
+                    .relative()
                     .p(px(24.))
                     .rounded(px(4.))
                     .border_1()
-                    .border_color(rgb(p.border))
-                    .bg(rgba(self.settings.glass_fill(p.window)))
+                    .border_color(rgba(glass_edge(p)))
+                    .shadow_lg()
+                    .bg(rgba(self.settings.glass_surface(p.window, p.dark)))
+                    .child(glass_top_highlight())
                     .child(
                         label(
                             if window {

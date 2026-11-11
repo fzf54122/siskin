@@ -20,9 +20,11 @@ impl SiskinApp {
             .h_full()
             .flex()
             .flex_col()
-            .bg(rgba(self.settings.glass_fill(p.sidebar)))
+            .relative()
+            .bg(rgba(self.settings.glass_surface(p.sidebar, p.dark)))
             .border_l_1()
-            .border_color(rgb(p.border))
+            .border_color(rgba(glass_edge(p)))
+            .child(glass_top_highlight())
             .child(self.agent_sidebar_header(p, cx))
             .child(
                 div()

@@ -25,6 +25,9 @@ pub(crate) struct GridInputs {
     pub metrics: RenderMetrics,
     pub font: SharedString,
     pub palette_bg: u32,
+    /// 终端底色的不透明度：整窗玻璃开着时低于 1（下限 0.92），
+    /// 关掉玻璃时为 1。底色矩形按这个画，整窗才真的透。
+    pub bg_alpha: f32,
     pub palette_fg: u32,
     pub selection_bg: u32,
     pub highlight_bg: u32,

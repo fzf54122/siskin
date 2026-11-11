@@ -79,7 +79,7 @@ impl SiskinApp {
             .min_h_0()
             .flex()
             .flex_col()
-            .bg(rgb(p.terminal))
+            .bg(rgba(self.settings.glass_terminal_fill(p.terminal)))
             .child(self.mouse_target(session_id, cx))
             .child(self.grid_layer(session_id, p, scrolled, cx))
             .when(focused && self.search.is_some(), |view| {
@@ -106,9 +106,11 @@ impl SiskinApp {
             .px(px(12.))
             .py(px(8.))
             .rounded(px(7.))
-            .bg(rgba(self.settings.glass_fill(p.window)))
+            .bg(rgba(self.settings.glass_surface(p.window, p.dark)))
             .border_1()
-            .border_color(rgb(p.border))
+            .border_color(rgba(glass_edge(p)))
+            .shadow_lg()
+            .child(glass_top_highlight())
             .text_size(px(12.))
             .text_color(rgb(p.ink))
             .child(label("›", p.accent))
@@ -309,6 +311,7 @@ impl SiskinApp {
                     metrics: self.metrics,
                     font: self.font(),
                     palette_bg: p.terminal,
+                    bg_alpha: self.settings.terminal_bg_alpha(),
                     palette_fg: p.ink,
                     selection_bg: p.tint,
                     highlight_bg: p.warn,
@@ -350,9 +353,10 @@ impl SiskinApp {
             .px(px(10.))
             .py(px(7.))
             .rounded(px(6.))
-            .bg(rgb(p.window))
+            .bg(rgba(self.settings.glass_surface(p.window, p.dark)))
             .border_1()
-            .border_color(rgb(p.border))
+            .border_color(rgba(glass_edge(p)))
+            .shadow_lg()
             .text_size(px(12.))
             .text_color(rgb(p.ink))
             .cursor_pointer()

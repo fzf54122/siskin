@@ -15,9 +15,11 @@ impl SiskinApp {
             .h_full()
             .flex()
             .flex_col()
-            .bg(rgba(self.settings.glass_fill(p.window)))
+            .relative()
+            .bg(rgba(self.settings.glass_surface(p.window, p.dark)))
             .border_l_1()
-            .border_color(rgb(p.border))
+            .border_color(rgba(glass_edge(p)))
+            .child(glass_top_highlight())
             .child(self.inspector_header(p, cx))
             .child(self.inspector_body(p))
             .child(

@@ -304,7 +304,7 @@ pub(super) fn side_rail(p: &Palette, rail_bg: u32) -> Div {
         .flex_col()
         .bg(rgba(rail_bg))
         .border_r_1()
-        .border_color(rgb(p.border))
+        .border_color(rgba(theme::glass::glass_edge_rgba(p.dark)))
 }
 
 pub(super) fn side_action(
