@@ -93,6 +93,14 @@ Siskin 已经具备终端模拟器的核心能力。下一阶段不急着堆功�
 - 有一份可重复运行的性能场景与基线记录。
 - 基线本身不设虚构的性能结果；优化目标由实际测量后确定。
 
+> 2026-11-10 进展：采样实现已落地（`src/domain/perf.rs`，
+> `--perf` / `SISKIN_PERF=1` / 命令面板「性能采样开/关」，
+> overlay 显示 FPS、P50/P95、shape、build、evt、sess、draw、
+> cache 命中率），场景与记录模板见 `docs/perf-baseline.md`。
+> GUI 基线数字尚未在真实桌面会话里测出，表中明确标「未测」，
+> 优化目标仍待实测后确定。GPUI profiler：固定 revision
+> 未提供可直接调用的帧 profiler，不为此升级框架。
+
 ## 5. P1：渲染热路径优化
 
 ### 5.1 有界文本整形缓存
