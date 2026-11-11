@@ -106,7 +106,7 @@ impl SiskinApp {
             .px(px(12.))
             .py(px(8.))
             .rounded(px(7.))
-            .bg(rgb(p.window))
+            .bg(rgba(self.settings.glass_fill(p.window)))
             .border_1()
             .border_color(rgb(p.border))
             .text_size(px(12.))
@@ -286,6 +286,14 @@ impl SiskinApp {
             )
         };
         let (highlights, current_match) = self.search_spans(session_id);
+        // ghost 只画在焦点 pane 上：`focused` 已包含页面、面板、
+        // 搜索条与关闭确认都没打开的条件，与光标的判定一致。
+        let ghost = if focused {
+            self.session_by_id(session_id)
+                .and_then(|session| session.ghost_suffix())
+        } else {
+            None
+        };
         div()
             .id(("terminal-grid", session_id))
             .debug_selector(|| "terminal-grid".into())
@@ -307,6 +315,7 @@ impl SiskinApp {
                     match_bg: p.warn,
                     highlights,
                     current_match,
+                    ghost,
                     cursor: p.accent,
                     link: p.path,
                     focused,

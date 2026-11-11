@@ -26,7 +26,7 @@ impl SiskinApp {
                     .rounded(px(4.))
                     .border_1()
                     .border_color(rgb(p.border))
-                    .bg(rgb(p.window))
+                    .bg(rgba(self.settings.glass_fill(p.window)))
                     .child(
                         label(
                             if window {

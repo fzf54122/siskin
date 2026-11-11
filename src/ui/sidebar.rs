@@ -48,7 +48,7 @@ impl SiskinApp {
                     .px(px(8.)),
             )
             // 搜索与会话信息都有快捷键和命令面板条目，不再各占一个图标按钮；
-            // tab 条右侧只留新建与设置两个高频入口。
+            // tab 条右侧只留新建、Agent 侧栏与设置三个高频入口。
             .child(icon_action(
                 "new-session",
                 ChromeIcon::Plus,
@@ -58,6 +58,7 @@ impl SiskinApp {
                 p,
                 cx,
             ))
+            .child(self.agent_sidebar_button(p, cx))
             .child(icon_action(
                 "nav-settings",
                 ChromeIcon::Palette,
@@ -67,6 +68,34 @@ impl SiskinApp {
                 p,
                 cx,
             ))
+    }
+
+    /// Agent 侧栏开关：打开时按钮高亮；有失败命令时右上角给 6px 红点，
+    /// 侧栏收起也能看见。
+    fn agent_sidebar_button(&self, p: &Palette, cx: &mut Context<Self>) -> Div {
+        div()
+            .relative()
+            .flex_shrink_0()
+            .child(icon_action(
+                "toggle-agent-sidebar",
+                ChromeIcon::List,
+                "Agent 侧栏 · Ctrl+Shift+A",
+                self.agent_sidebar_open,
+                Action::ToggleAgentSidebar,
+                p,
+                cx,
+            ))
+            .when(self.agent_sidebar_has_failure(), |view| {
+                view.child(
+                    div()
+                        .absolute()
+                        .top(px(3.))
+                        .right(px(3.))
+                        .size(px(6.))
+                        .rounded_full()
+                        .bg(rgb(p.error)),
+                )
+            })
     }
 
     fn session_tab(&self, index: usize, p: &Palette, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -266,14 +295,14 @@ impl SiskinApp {
     }
 }
 
-pub(super) fn side_rail(p: &Palette) -> Div {
+pub(super) fn side_rail(p: &Palette, rail_bg: u32) -> Div {
     div()
         .w(px(SETTINGS_RAIL_WIDTH))
         .flex_shrink_0()
         .h_full()
         .flex()
         .flex_col()
-        .bg(rgb(p.sidebar))
+        .bg(rgba(rail_bg))
         .border_r_1()
         .border_color(rgb(p.border))
 }

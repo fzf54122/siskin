@@ -65,9 +65,10 @@ impl VtListener {
     }
 
     /// 读线程专用：OSC 133 标记不是上游 `Event`，不走 `send_event`，
-    /// 直接按同一个通道发回应用层。
-    pub(crate) fn shell_mark(&self, line: i32, mark: Osc133Mark) {
-        self.emit(VtEvent::ShellMark(ShellMark::new(line, mark)));
+    /// 直接按同一个通道发回应用层。`column` 是标记到达时刻的光标列，
+    /// `B` 的列就是提示符末尾，ghost 输入起点用它。
+    pub(crate) fn shell_mark(&self, line: i32, column: i32, mark: Osc133Mark) {
+        self.emit(VtEvent::ShellMark(ShellMark::new(line, column, mark)));
     }
 }
 

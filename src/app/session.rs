@@ -48,6 +48,8 @@ pub(crate) struct Session {
     frame_dirty: bool,
     /// OSC 133 命令记录：每会话独立，上限 100 条。无标记时全空是合法态。
     pub shell_marks: CommandLog,
+    /// 行内自动补全状态：建议来源、提示符锚点、Esc 取消记录；每会话独立。
+    pub(crate) ghost: crate::domain::ghost::GhostState,
 }
 
 impl Session {
@@ -69,6 +71,7 @@ impl Session {
             scroll_offset: crate::domain::ScrollOffset::default(),
             frame_dirty: false,
             shell_marks: CommandLog::new(),
+            ghost: crate::domain::ghost::GhostState::new(),
         }
     }
 

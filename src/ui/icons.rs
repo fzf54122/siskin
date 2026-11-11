@@ -17,6 +17,8 @@ pub(super) enum ChromeIcon {
     Palette,
     Desktop,
     Check,
+    /// 三横线列表：Agent 侧栏的开关图标。
+    List,
 }
 
 pub(super) fn chrome_icon(icon: ChromeIcon, color: u32) -> Div {
@@ -99,5 +101,10 @@ fn icon_paths(icon: ChromeIcon) -> &'static [&'static [(f32, f32)]] {
             &[(7., 18.), (13., 18.)],
         ],
         ChromeIcon::Check => &[&[(4., 10.), (8., 14.), (16., 6.)]],
+        ChromeIcon::List => &[
+            &[(5., 6.), (15., 6.)],
+            &[(5., 10.), (15., 10.)],
+            &[(5., 14.), (15., 14.)],
+        ],
     }
 }

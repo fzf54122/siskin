@@ -316,9 +316,12 @@ fn read_and_parse(
                     // 输出到来整体下移（旧内容滚进历史），存下来就漂移。
                     // 稳定行 = history_size + 绝对行，绝对行 = 视口行
                     // - display_offset；跳转时再用当前 history_size 换回。
+                    // 列同样在解析标记字节之前读：`B` 到达时光标正在
+                    // 提示符末尾，这个列就是 ghost 的输入起点。
                     let line = term.history_size() as i32 + term.grid().cursor.point.line.0
                         - term.grid().display_offset() as i32;
-                    listener.shell_mark(line, hit.mark);
+                    let column = term.grid().cursor.point.column.0 as i32;
+                    listener.shell_mark(line, column, hit.mark);
                     state
                         .parser
                         .advance(&mut *term, &chunk[hit.anchor..hit.end]);

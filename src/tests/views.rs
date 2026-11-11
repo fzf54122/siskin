@@ -320,3 +320,20 @@ fn menu_shell_action_updates_new_sessions_and_displayed_tab(cx: &mut TestAppCont
     assert_eq!(read(&view, cx, |app| app.session().kind), ShellKind::Bash);
     assert_eq!(read(&view, cx, |app| app.page), Page::Terminal);
 }
+
+#[gpui::test]
+fn palette_theme_actions_select_the_new_presets(cx: &mut TestAppContext) {
+    let (view, cx) = window(cx);
+    for theme in [ThemeId::CatppuccinMocha, ThemeId::TokyoNight, ThemeId::Moss] {
+        view.update(cx, |app, _| {
+            app.dispatch(Action::SetTheme(theme));
+        });
+        assert_eq!(read(&view, cx, |app| app.theme().id), theme);
+        assert_eq!(read(&view, cx, |app| app.theme().dark), theme.is_dark());
+    }
+    // 点选之后再切模式，预设固定即解除，回到按模式解析。
+    view.update(cx, |app, _| {
+        app.dispatch(Action::CycleThemeMode);
+    });
+    assert_eq!(read(&view, cx, |app| app.theme().id), ThemeId::Graphite);
+}

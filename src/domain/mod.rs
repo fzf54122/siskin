@@ -6,6 +6,8 @@
 //! 纯数据与规则。这一层不能依赖 `gpui`、`zbus`，也不依赖上层模块。
 
 pub(crate) mod action;
+pub(crate) mod agent_sidebar;
+pub(crate) mod ghost;
 pub(crate) mod key;
 pub(crate) mod metrics;
 pub(crate) mod perf;

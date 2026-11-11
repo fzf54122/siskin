@@ -6,9 +6,11 @@
 //! 跨层测试：视图渲染、按键链路、会话仓储、真实 PTY。菜单协议测试贴着
 //! `io::dbusmenu` 放，因为 `MenuService` 的接口方法只在该模块内可见。
 
+mod agent_sidebar;
 mod compat;
 mod compat_gui;
 mod compat_pty;
+mod ghost;
 mod keys;
 mod layout;
 mod palette;

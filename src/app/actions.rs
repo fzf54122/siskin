@@ -7,10 +7,17 @@
 //! 在 `Action::run`；新增动作只需加枚举项和一条臂。
 
 use crate::app::SiskinApp;
+use crate::domain::shell_spec::ShellKind;
 use crate::domain::{Action, ActionEffect};
+use crate::theme::ThemeId;
 
 impl Action {
     pub(crate) fn run(self, app: &mut SiskinApp) -> ActionEffect {
+        // 命令面板的“最近操作”从这里统一记：菜单、快捷键、面板
+        // 三处入口都走 `run`，打开面板本身不记。
+        if self != Action::OpenPalette {
+            app.record_recent(self);
+        }
         match self {
             Action::NewSession => app.new_session(),
             Action::CloseSession => {
@@ -27,9 +34,11 @@ impl Action {
                 };
             }
             Action::OpenPalette => app.open_palette(),
+            Action::ToggleAgentSidebar => app.toggle_agent_sidebar(),
             Action::OpenSettings => app.set_page(crate::settings::Page::Settings),
             Action::OpenTerminal => app.set_page(crate::settings::Page::Terminal),
             Action::CycleThemeMode => app.cycle_theme(),
+            Action::SetTheme(theme) => app.set_theme(theme),
             Action::FontLarger => app.step_font(true),
             Action::FontSmaller => app.step_font(false),
             Action::ToggleInspector => app.toggle_inspector(),
@@ -52,6 +61,8 @@ impl Action {
             Action::PreviousCommand => app.jump_command(false),
             Action::OpenSearch => app.open_search(),
             Action::TogglePerf => app.toggle_perf(),
+            Action::ToggleGlass => app.toggle_glass(),
+            Action::CycleGlassOpacity => app.cycle_glass_opacity(),
             Action::RenameSession => app.rename_active_tab(),
         }
         app.sync_menu();
@@ -69,7 +80,28 @@ pub(crate) struct PaletteEntry {
     pub action: Action,
 }
 
-pub(crate) static PALETTE_ENTRIES: [PaletteEntry; 21] = [
+pub(crate) static PALETTE_ENTRIES: [PaletteEntry; 39] = [
+    PaletteEntry {
+        label: "玻璃效果开/关",
+        keywords: "glass blur frosted transparency glassmorphism 磨砂 玻璃 模糊 透明",
+        hint: "浮层用半透明磨砂底，关闭回到实色；终端主区始终实底",
+        keys: "Ctrl Shift G",
+        action: Action::ToggleGlass,
+    },
+    PaletteEntry {
+        label: "玻璃透度",
+        keywords: "glass opacity transparency 磨砂 透度 不透明度",
+        hint: "标准 / 较浓 / 浓郁三档循环，均按 4.5:1 校验过对比度",
+        keys: "",
+        action: Action::CycleGlassOpacity,
+    },
+    PaletteEntry {
+        label: "Agent 侧栏",
+        keywords: "agent sidebar session status agent 侧栏 会话 状态",
+        hint: "按会话列出当前命令与状态，点击条目聚焦到对应会话",
+        keys: "Ctrl Shift A",
+        action: Action::ToggleAgentSidebar,
+    },
     PaletteEntry {
         label: "重命名当前标签",
         keywords: "rename tab session title 重命名 标签 改名",
@@ -162,6 +194,20 @@ pub(crate) static PALETTE_ENTRIES: [PaletteEntry; 21] = [
         action: Action::ScrollPageUp,
     },
     PaletteEntry {
+        label: "向下翻页",
+        keywords: "scroll page down history",
+        hint: "向新输出方向翻一页",
+        keys: "Shift PageDown",
+        action: Action::ScrollPageDown,
+    },
+    PaletteEntry {
+        label: "滚到最旧输出",
+        keywords: "scroll top oldest history",
+        hint: "滚到滚动区的最顶端",
+        keys: "Shift Home",
+        action: Action::ScrollToTop,
+    },
+    PaletteEntry {
         label: "回到最新输出",
         keywords: "scroll bottom latest",
         hint: "滚回底部并跟随输出",
@@ -197,6 +243,13 @@ pub(crate) static PALETTE_ENTRIES: [PaletteEntry; 21] = [
         action: Action::OpenSettings,
     },
     PaletteEntry {
+        label: "回到终端",
+        keywords: "terminal page back open",
+        hint: "从设置页回到终端",
+        keys: "Ctrl 1",
+        action: Action::OpenTerminal,
+    },
+    PaletteEntry {
         label: "切换配色主题",
         keywords: "theme palette color dark light",
         hint: "跟随系统 / 浅色 / 深色 / 自定义",
@@ -204,11 +257,60 @@ pub(crate) static PALETTE_ENTRIES: [PaletteEntry; 21] = [
         action: Action::CycleThemeMode,
     },
     PaletteEntry {
-        label: "放大/缩小字号",
-        keywords: "font bigger smaller zoom",
-        hint: "终端等宽字号按档位调整",
-        keys: "Ctrl +/-",
+        label: "主题：Paper",
+        keywords: "theme paper light white",
+        hint: "暖白纸面",
+        keys: "",
+        action: Action::SetTheme(ThemeId::Paper),
+    },
+    PaletteEntry {
+        label: "主题：Graphite",
+        keywords: "theme graphite dark gray",
+        hint: "中性深灰",
+        keys: "",
+        action: Action::SetTheme(ThemeId::Graphite),
+    },
+    PaletteEntry {
+        label: "主题：Moss",
+        keywords: "theme moss light green",
+        hint: "苔绿浅色",
+        keys: "",
+        action: Action::SetTheme(ThemeId::Moss),
+    },
+    PaletteEntry {
+        label: "主题：Dusk",
+        keywords: "theme dusk dark indigo blue",
+        hint: "靛蓝夜色",
+        keys: "",
+        action: Action::SetTheme(ThemeId::Dusk),
+    },
+    PaletteEntry {
+        label: "主题：Catppuccin Mocha",
+        keywords: "theme catppuccin mocha dark pastel mauve",
+        hint: "粉彩摩卡",
+        keys: "",
+        action: Action::SetTheme(ThemeId::CatppuccinMocha),
+    },
+    PaletteEntry {
+        label: "主题：Tokyo Night",
+        keywords: "theme tokyo night dark blue",
+        hint: "东京夜蓝",
+        keys: "",
+        action: Action::SetTheme(ThemeId::TokyoNight),
+    },
+    PaletteEntry {
+        label: "放大字号",
+        keywords: "font bigger larger zoom",
+        hint: "终端等宽字号放大一档",
+        keys: "Ctrl +",
         action: Action::FontLarger,
+    },
+    PaletteEntry {
+        label: "缩小字号",
+        keywords: "font smaller zoom",
+        hint: "终端等宽字号缩小一档",
+        keys: "Ctrl -",
+        action: Action::FontSmaller,
     },
     PaletteEntry {
         label: "性能采样开/关",
@@ -216,5 +318,40 @@ pub(crate) static PALETTE_ENTRIES: [PaletteEntry; 21] = [
         hint: "显示 FPS、P95、整形与构帧耗时，可复现基线用",
         keys: "",
         action: Action::TogglePerf,
+    },
+    PaletteEntry {
+        label: "默认 Shell：zsh",
+        keywords: "shell default zsh terminal",
+        hint: "只影响之后新建的会话",
+        keys: "",
+        action: Action::SetShell(ShellKind::Zsh),
+    },
+    PaletteEntry {
+        label: "默认 Shell：bash",
+        keywords: "shell default bash terminal",
+        hint: "只影响之后新建的会话",
+        keys: "",
+        action: Action::SetShell(ShellKind::Bash),
+    },
+    PaletteEntry {
+        label: "默认 Shell：fish",
+        keywords: "shell default fish terminal",
+        hint: "只影响之后新建的会话",
+        keys: "",
+        action: Action::SetShell(ShellKind::Fish),
+    },
+    PaletteEntry {
+        label: "默认 Shell：sh",
+        keywords: "shell default sh terminal",
+        hint: "只影响之后新建的会话",
+        keys: "",
+        action: Action::SetShell(ShellKind::Sh),
+    },
+    PaletteEntry {
+        label: "退出 Siskin",
+        keywords: "quit exit close app",
+        hint: "退出应用",
+        keys: "",
+        action: Action::Quit,
     },
 ];

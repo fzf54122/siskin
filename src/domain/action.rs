@@ -8,6 +8,7 @@
 //! 而不必反向依赖应用层。
 
 use crate::domain::shell_spec::ShellKind;
+use crate::theme::ThemeId;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Action {
@@ -18,7 +19,10 @@ pub(crate) enum Action {
     OpenPalette,
     OpenSettings,
     OpenTerminal,
+    ToggleAgentSidebar,
     CycleThemeMode,
+    /// 从命令面板点选一套i置主题；见 `Settings::set_theme`。
+    SetTheme(ThemeId),
     FontLarger,
     FontSmaller,
     ToggleInspector,
@@ -40,6 +44,10 @@ pub(crate) enum Action {
     PreviousCommand,
     OpenSearch,
     TogglePerf,
+    /// 玻璃效果开/关（Ctrl+Shift+G）：浮层回到实色或恢复半透明磨砂。
+    ToggleGlass,
+    /// 玻璃透度三档循环：0.85 → 0.90 → 0.95。
+    CycleGlassOpacity,
     /// 重命名当前（活动）标签：双击标签是同一入口。
     RenameSession,
 }

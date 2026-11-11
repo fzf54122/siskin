@@ -106,7 +106,7 @@ impl SiskinApp {
             .rounded(px(3.))
             .border_1()
             .border_color(rgb(p.error))
-            .bg(rgb(p.window))
+            .bg(rgba(self.settings.glass_fill(p.window)))
             .flex()
             .items_center()
             .gap(px(12.))

@@ -188,6 +188,37 @@ impl Pty {
         super::history_search::search_history(&self.terminal.lock(), query, case_sensitive, regex)
     }
 
+    /// 读稳定行 `stable_line` 上从 `from_column` 格开始的文本，
+    /// 尾部空白已去。行号换算与 `domain::shell_marks` 的稳定行一致：
+    /// 绝对行 = 稳定行 - 当前 history_size。行超出滚动区时返回 `None`。
+    /// 宽字符的后半格（spacer）不重复计入，组合字符跟在基字后面。
+    /// 只读网格，不写 PTY、不改光标；ghost 在 `C` 到达时按它读刚提交的命令。
+    pub(crate) fn line_text(&self, stable_line: i32, from_column: usize) -> Option<String> {
+        use alacritty_terminal::grid::Dimensions;
+        use alacritty_terminal::index::{Column, Line};
+        use alacritty_terminal::term::cell::Flags;
+        let term = self.terminal.lock();
+        let history = term.history_size() as i32;
+        let line = Line(stable_line - history);
+        if line.0 < -history || line.0 >= term.screen_lines() as i32 {
+            return None;
+        }
+        let columns = term.columns();
+        let row = &term.grid()[line];
+        let mut text = String::new();
+        for column in from_column..columns {
+            let cell = &row[Column(column)];
+            if cell.flags.contains(Flags::WIDE_CHAR_SPACER) || cell.flags.contains(Flags::HIDDEN) {
+                continue;
+            }
+            text.push(cell.c);
+            if let Some(extras) = cell.zerowidth() {
+                text.extend(extras.iter());
+            }
+        }
+        Some(text.trim_end().to_string())
+    }
+
     /// 子进程工作目录。Linux 下读 `/proc/<pid>/cwd`，失败返回 `None`
     /// 而不是报错：面板信息缺一行不影响终端使用。
     pub(crate) fn working_directory(&self) -> Option<std::path::PathBuf> {

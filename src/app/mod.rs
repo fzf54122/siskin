@@ -7,10 +7,14 @@
 //! `app/actions.rs`，PTY 事件由 `app/events.rs` 消费。
 
 mod actions;
+mod agent_sidebar;
 mod clipboard;
 mod close_ops;
 mod editor_ops;
 pub(crate) mod events;
+pub(crate) mod fuzzy;
+mod ghost;
+mod glass_ops;
 mod keys;
 mod menu_ops;
 mod palette;
@@ -38,7 +42,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
-use gpui::{Bounds, FocusHandle, Pixels, SharedString};
+use gpui::{Bounds, FocusHandle, Pixels, SharedString, WindowBackgroundAppearance};
 
 use crate::domain::RenderMetrics;
 use crate::domain::{Action, SessionSpec, ShellKind};
@@ -83,10 +87,20 @@ pub(crate) struct SiskinApp {
     pub ui: SharedString,
     pub mono_fonts: Vec<String>,
     pub palette: Option<CommandPalette>,
+    /// 命令面板的“最近操作”：最近 5 条，最新的在前；面板打开时
+    /// 空查询会把它们排在最前面。
+    pub(crate) palette_recent: Vec<Action>,
+    /// Agent 侧栏开关，默认收起；有失败命令时 tab 栏按钮上给红点提示。
+    pub agent_sidebar_open: bool,
+    /// 侧栏条目缓存：250ms 节流重算，见 `refresh_agent_sidebar`。
+    pub(crate) agent_sidebar_cache: crate::domain::agent_sidebar::SidebarCache,
     pub settings_section: SettingsSection,
     pub inspector_open: bool,
     pub page: Page,
     pub settings: Settings,
+    /// 最后一次推给平台窗口的背景外观；`None` 表示还没推过，
+    /// 首帧按玻璃开关同步（`sync_glass_appearance`）。
+    pub(crate) last_glass_appearance: Option<WindowBackgroundAppearance>,
     /// Updated by GPUI's desktop appearance observer.
     pub system_dark: bool,
     /// The exported global menu, when the desktop provides a registrar.
@@ -146,12 +160,21 @@ pub(crate) struct SiskinApp {
 }
 
 impl SiskinApp {
-    pub fn new(cx: &mut gpui::Context<Self>) -> Self {
+    /// 启动时的已装字体、等宽字体候选、设置与首个会话；
+    /// `new` 本身有 60 行上限，前置准备抽到这里。
+    fn starting_state(
+        cx: &mut gpui::Context<Self>,
+    ) -> (Vec<String>, Vec<String>, Settings, Sessions) {
         let installed = cx.text_system().all_font_names();
         let mono_fonts = theme::mono_fonts(&installed);
         let mut settings = Settings::default();
         settings.resolve_theme(false);
         let sessions = Sessions::new(Session::starting(0, "终端", settings.shell));
+        (installed, mono_fonts, settings, sessions)
+    }
+
+    pub fn new(cx: &mut gpui::Context<Self>) -> Self {
+        let (installed, mono_fonts, settings, sessions) = Self::starting_state(cx);
         Self {
             sessions,
             active_pane: 0,
@@ -165,10 +188,14 @@ impl SiskinApp {
             ui: theme::ui_family(&installed).to_string().into(),
             mono_fonts,
             palette: None,
+            palette_recent: Vec::new(),
+            agent_sidebar_open: false,
+            agent_sidebar_cache: Default::default(),
             settings_section: SettingsSection::Appearance,
             inspector_open: false,
             page: Page::Terminal,
             settings,
+            last_glass_appearance: None,
             system_dark: false,
             menu: None,
             menu_state: MenuState::Unavailable,
@@ -277,10 +304,19 @@ impl SiskinApp {
         let Some(palette) = self.palette.as_ref() else {
             return PALETTE_ENTRIES.iter().collect();
         };
-        PALETTE_ENTRIES
-            .iter()
-            .filter(|entry| palette.matches(entry))
+        palette
+            .ranked(&self.palette_recent)
+            .into_iter()
+            .map(|(index, _)| &PALETTE_ENTRIES[index])
             .collect()
+    }
+
+    /// 命令面板的“最近操作”：最多 5 条，最新的在前；打开面板
+    /// 本身不记，避免每次打开都把它顶到第一位。
+    pub(crate) fn record_recent(&mut self, action: Action) {
+        self.palette_recent.retain(|&item| item != action);
+        self.palette_recent.insert(0, action);
+        self.palette_recent.truncate(5);
     }
 
     pub(crate) fn palette_type(&mut self, ch: char) {

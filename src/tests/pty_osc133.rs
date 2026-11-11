@@ -6,6 +6,7 @@
 //! OSC 133 集成测试：真实 PTY 里的标记、行号锚定、命令跳转与 Bash/Zsh
 //! 集成脚本验证。`spawn` / `wait_for_output` 复用 `tests/pty.rs`。
 
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crate::domain::session::SessionSpec;
@@ -279,4 +280,95 @@ fn assert_subsequence(marks: &[ShellMark], wanted: &[Osc133Mark], message: &str)
             "{message}，实际序列：{marks:?}"
         );
     }
+}
+
+/// `C` 到达时把刚提交的命令记进建议来源：字节顺序按真实 shell——
+/// 提示符 `P` → `B` → 输入 → 回车换行 → `C` → 输出 → `D`。
+/// 输入行在 `C` 到达时已经封行，输出落在下一行，捕获读到的就是完整命令。
+#[test]
+fn preexec_captures_the_submitted_command_for_suggestions() {
+    let spec = SessionSpec::command(
+        "test",
+        PathBuf::from("/bin/sh"),
+        vec![
+            "-c".into(),
+            "printf '\\033]133;A\\033\\\\P\\033]133;B\\033\\\\git status\\r\\n\\033]133;C\\033\\\\out\\n\\033]133;D;0\\033\\\\'; sleep 2".into(),
+        ],
+    );
+    let palette = AnsiColors::from_palette(&PAPER);
+    let mut session = crate::app::Session::starting(31, "Ghost 会话", ShellKind::Sh);
+    let (sender, receiver) = async_channel::unbounded();
+    session
+        .spawn_spec(&spec, sender, 0)
+        .expect("测试环境必须能派生 PTY");
+    let marks = collect_marks(&receiver, 15, |marks| {
+        marks
+            .iter()
+            .any(|mark| matches!(mark.mark, Osc133Mark::CommandEnd { .. }))
+    });
+    assert_eq!(marks.len(), 4, "应收到 A/B/C/D 各一个");
+    let b = marks
+        .iter()
+        .find(|mark| matches!(mark.mark, Osc133Mark::CommandInput))
+        .expect("应有 B 标记");
+    assert_eq!(b.line, 0, "B 在提示符行");
+    assert_eq!(b.column, 1, "B 到达时光标在提示符 P 之后");
+    for mark in marks {
+        session.apply_shell_mark(mark);
+    }
+    assert_eq!(session.shell_marks.len(), 1);
+    assert_eq!(
+        session.shell_marks.spans()[0].input_column,
+        1,
+        "B 的列应进命令记录"
+    );
+    assert_eq!(
+        session.ghost.history.suggest("git "),
+        Some("status".to_string()),
+        "C 到达时应把输入行记进建议来源"
+    );
+    assert_eq!(
+        session.ghost.history.suggest("git s"),
+        Some("tatus".to_string())
+    );
+    // 标记字节照常进了 VT 解析器，普通输出不能丢。
+    session.mark_output();
+    session.refresh(&palette);
+    assert!(
+        session_text(&session).contains("out"),
+        "OSC 标记不能剥离普通输出"
+    );
+}
+
+/// 没有 `B` 就不知道提示符末尾：`C` 到了也不猜、不记。
+#[test]
+fn preexec_without_a_prompt_anchor_records_nothing() {
+    let spec = SessionSpec::command(
+        "test",
+        PathBuf::from("/bin/sh"),
+        vec![
+            "-c".into(),
+            "printf 'git status\\r\\n\\033]133;C\\033\\\\out\\n\\033]133;D;0\\033\\\\'; sleep 2"
+                .into(),
+        ],
+    );
+    let mut session = crate::app::Session::starting(32, "Ghost 会话", ShellKind::Sh);
+    let (sender, receiver) = async_channel::unbounded();
+    session
+        .spawn_spec(&spec, sender, 0)
+        .expect("测试环境必须能派生 PTY");
+    let marks = collect_marks(&receiver, 15, |marks| {
+        marks
+            .iter()
+            .any(|mark| matches!(mark.mark, Osc133Mark::CommandEnd { .. }))
+    });
+    for mark in marks {
+        session.apply_shell_mark(mark);
+    }
+    assert_eq!(session.shell_marks.len(), 1, "没有 B 也能记一条命令");
+    assert_eq!(
+        session.ghost.history.suggest("git "),
+        None,
+        "不知道提示符末尾时不猜、不记"
+    );
 }

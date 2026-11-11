@@ -14,6 +14,7 @@
 mod cache;
 mod cursor;
 mod element;
+mod ghost;
 mod inputs;
 mod paint;
 mod runs;
@@ -83,6 +84,11 @@ pub(crate) struct TerminalGrid {
     /// 搜索匹配区间。高亮只改背景色，不改文字内容。
     highlights: Vec<MatchSpan>,
     current_match: Option<MatchSpan>,
+    /// 行内自动补全的后缀文本。只在焦点 pane 且光标可见时画，
+    /// 位置是光标行、光标列之后，颜色是弱化的前景色。
+    ghost: Option<String>,
+    /// ghost 文本颜色：前景向底色弱化 45%，与正常文字区分开。
+    ghost_color: u32,
     cursor_slot: CursorSlot,
     origin_slot: OriginSlot,
     view: gpui::Entity<crate::app::SiskinApp>,
@@ -107,6 +113,8 @@ impl TerminalGrid {
             link_color: inputs.link,
             highlights: inputs.highlights,
             current_match: inputs.current_match,
+            ghost: inputs.ghost,
+            ghost_color: mix(inputs.palette_bg, inputs.palette_fg, 0.45),
             cursor_slot: inputs.cursor_slot,
             origin_slot: inputs.origin_slot,
             view: inputs.view,
@@ -203,6 +211,9 @@ impl TerminalGrid {
                 let position = self.cell_origin(origin, row, run.start_column);
                 shaped.push((position, self.shape_run(&run, window)));
             }
+        }
+        if row == self.frame.cursor.row {
+            shaped.extend(self.ghost_runs(row, line, origin, window));
         }
         backgrounds.extend(self.selection_spans(row, line, origin));
         backgrounds.extend(self.highlight_spans(row, origin));

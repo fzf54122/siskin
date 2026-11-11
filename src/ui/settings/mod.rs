@@ -43,7 +43,7 @@ impl SiskinApp {
     }
 
     pub(super) fn settings_sidebar(&self, p: &Palette, cx: &mut Context<Self>) -> Div {
-        side_rail(p)
+        side_rail(p, self.settings.glass_fill(p.sidebar))
             .child(
                 side_action(
                     "settings-done",

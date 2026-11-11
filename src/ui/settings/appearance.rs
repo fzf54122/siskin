@@ -35,6 +35,61 @@ impl SiskinApp {
                     .child(self.color_field("color-accent", "强调色", ColorTarget::Accent, p, cx)),
             )
             .child(self.custom_colors(p, cx))
+            .child(
+                group()
+                    .child(group_heading("玻璃效果", "", p))
+                    .child(form_row(
+                        "玻璃效果",
+                        "浮层（命令面板、搜索条、侧栏、弹窗）用半透明磨砂底，终端主区始终实底。KDE Plasma Wayland 下窗口背后真模糊，其余桌面为半透明近似。",
+                        self.glass_toggle_control(p, cx),
+                        p,
+                    ))
+                    .child(form_row(
+                        "玻璃透度",
+                        "浮层底色不透明度；三档均按 WCAG 4.5:1 校验过文字对比度。关闭玻璃效果时暂不生效。",
+                        self.glass_opacity_control(p, cx),
+                        p,
+                    )),
+            )
+    }
+
+    /// 玻璃开关按钮：显示当前状态，点击即切换并落盘。
+    fn glass_toggle_control(&self, p: &Palette, cx: &mut Context<Self>) -> Stateful<Div> {
+        let enabled = self.settings.glass;
+        action(
+            "glass-toggle",
+            if enabled { "已开启" } else { "已关闭" },
+            p,
+            cx,
+            |app| app.toggle_glass(),
+        )
+        .when(enabled, |view| view.bg(rgb(p.tint)))
+    }
+
+    /// 透度三档按钮：当前档用选区底色高亮，点击即切换并落盘。
+    fn glass_opacity_control(&self, p: &Palette, cx: &mut Context<Self>) -> Div {
+        let selected = theme::glass::nearest_step(self.settings.glass_opacity);
+        div()
+            .flex()
+            .gap(px(8.))
+            .child(self.glass_opacity_button(0, "glass-opacity-0", selected == 0, p, cx))
+            .child(self.glass_opacity_button(1, "glass-opacity-1", selected == 1, p, cx))
+            .child(self.glass_opacity_button(2, "glass-opacity-2", selected == 2, p, cx))
+    }
+
+    fn glass_opacity_button(
+        &self,
+        index: usize,
+        id: &'static str,
+        selected: bool,
+        p: &Palette,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let value = theme::glass::GLASS_OPACITY_STEPS[index].0;
+        let name = theme::glass::GLASS_OPACITY_STEPS[index].1;
+        action(id, name, p, cx, move |app| app.set_glass_opacity(value)).when(selected, |view| {
+            view.bg(rgb(p.tint)).font_weight(FontWeight::MEDIUM)
+        })
     }
 
     fn theme_choice(

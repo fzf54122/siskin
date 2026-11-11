@@ -35,6 +35,9 @@ pub(crate) struct GridInputs {
     pub link: u32,
     pub highlights: Vec<MatchSpan>,
     pub current_match: Option<MatchSpan>,
+    /// 行内自动补全的后缀文本（光标之后、弱化色画的那段）。
+    /// `None` 表示没有联想；位置由帧光标定，不在这里再传行列。
+    pub ghost: Option<String>,
     pub cursor_slot: CursorSlot,
     pub origin_slot: OriginSlot,
     pub view: Entity<crate::app::SiskinApp>,

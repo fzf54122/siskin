@@ -21,7 +21,7 @@ impl SiskinApp {
             .flex_col()
             .items_center()
             .pt(px(80.))
-            .bg(rgba(0x0b102055))
+            .bg(rgba(theme::glass::GLASS_SCRIM_RGBA))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|app, _, _, cx| {
@@ -35,7 +35,7 @@ impl SiskinApp {
                     .max_w_full()
                     .rounded(px(12.))
                     .shadow_lg()
-                    .bg(rgb(p.window))
+                    .bg(rgba(self.settings.glass_fill(p.window)))
                     .border_1()
                     .border_color(rgb(p.border))
                     .overflow_hidden()
@@ -89,6 +89,11 @@ impl SiskinApp {
             .palette
             .as_ref()
             .is_some_and(|value| value.selected == index);
+        let ranges = self
+            .palette
+            .as_ref()
+            .map(|value| value.label_ranges(entry))
+            .unwrap_or_default();
         let action = entry.action;
         div()
             .id(("palette-entry", index))
@@ -108,7 +113,7 @@ impl SiskinApp {
             }))
             .child(
                 div()
-                    .child(label(entry.label, p.ink))
+                    .child(highlight_label(entry.label, &ranges, p))
                     .child(detail(entry.hint, p).mt(px(4.))),
             )
             .child(detail(entry.keys, p))

@@ -5,6 +5,7 @@
 
 //! GPUI 视图，不直接碰 `std::process`。会话、PTY、配置都在 `app` 与 `io`。
 
+mod agent_sidebar;
 mod close;
 mod grid;
 mod icons;
@@ -42,11 +43,15 @@ const INSPECTOR_WIDTH: f32 = 280.;
 impl Render for SiskinApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = self.theme();
+        self.sync_glass_appearance(window); // 开 → 请求背后模糊，关 → 不透明，只在变化时推
         let width = window.viewport_size().width.as_f32();
         let show_inspector = self.inspector_open && self.page == Page::Terminal && width >= 1100.;
         self.refresh_directory(false);
         if self.page == Page::Terminal {
             self.refresh_metrics(window, show_inspector);
+            // Agent 侧栏条目 250ms 节流重算：收起时也算，tab 栏的失败红点
+            // 靠这份缓存亮；设置页没有侧栏，不花这份钱。
+            self.refresh_agent_sidebar();
         }
         if self.request_focus {
             self.focus.focus(window, cx);
@@ -84,10 +89,10 @@ impl Render for SiskinApp {
             .font_family(self.ui.clone())
             .text_size(px(14.))
             .text_color(rgb(palette.ink))
-            // 半透明画布：窗口 surface 已切到 PreMultiplied alpha，这里给出
-            // 0.92 的不透明度，桌面内容会从背后透出来。终端区域另用
-            // `palette.terminal` 实底遮挡，保证输出可读。
-            .bg(rgba((palette.canvas << 8) | (0.92 * 255.) as u32))
+            // 玻璃画布：开着时整窗按玻璃透度半透明，桌面内容从背后透
+            // 出来；关掉即实色画布。终端区另用 `palette.terminal` 实底
+            // 遮挡，保证输出可读——玻璃只做在 chrome/浮层上。
+            .bg(rgba(self.settings.glass_fill(palette.canvas)))
             .child(
                 div()
                     .id("main-workspace")
@@ -98,6 +103,10 @@ impl Render for SiskinApp {
                         root.child(self.settings_sidebar(&palette, cx))
                     })
                     .child(self.workspace(&palette, cx))
+                    .when(
+                        self.page == Page::Terminal && self.agent_sidebar_open,
+                        |root| root.child(self.agent_sidebar(&palette, cx)),
+                    )
                     .when(show_inspector, |root| {
                         root.child(self.session_inspector(&palette, cx))
                     }),
@@ -128,7 +137,7 @@ impl SiskinApp {
             .px(px(10.))
             .py(px(6.))
             .rounded(px(6.))
-            .bg(rgb(palette.window))
+            .bg(rgba(self.settings.glass_fill(palette.window)))
             .border_1()
             .border_color(rgb(palette.border))
             .text_size(px(11.))
@@ -165,8 +174,16 @@ impl SiskinApp {
         let line_height = ((ascent + descent) * 1.25).max(self.font_size() * 1.15);
         const PADDING: f32 = 24.;
         let viewport = window.viewport_size();
-        // 侧栏已移除，终端可用宽度就是窗口宽度，只扣除右侧会话信息面板。
-        let width = viewport.width.as_f32() - if show_inspector { INSPECTOR_WIDTH } else { 0. };
+        // 侧栏已移除，终端可用宽度就是窗口宽度，只扣除右侧会话信息面板
+        // 与 Agent 侧栏（收起时 0）。
+        let agent_width = if self.agent_sidebar_open {
+            crate::domain::agent_sidebar::AGENT_SIDEBAR_WIDTH
+        } else {
+            0.
+        };
+        let width = viewport.width.as_f32()
+            - if show_inspector { INSPECTOR_WIDTH } else { 0. }
+            - agent_width;
         // tab 条是终端上方唯一的常驻条，纵向可用高度只扣它。
         let height = viewport.height.as_f32() - TAB_BAR_HEIGHT;
         self.metrics =

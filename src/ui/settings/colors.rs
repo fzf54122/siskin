@@ -15,10 +15,9 @@ impl SiskinApp {
                 div().h(px(33.)).flex().items_center().child(detail(
                     if p.id == theme::ThemeId::Custom {
                         "自定义"
-                    } else if p.dark {
-                        "深色"
                     } else {
-                        "柔和浅色"
+                        // 预设名就是当前主题，避免只剩“深色/浅色”分不清是哪一套。
+                        p.id.name()
                     },
                     p,
                 )),

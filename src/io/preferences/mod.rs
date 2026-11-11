@@ -24,7 +24,8 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::domain::ShellKind;
-use crate::settings::{CustomTheme, FONT_SIZES, Settings, ThemeMode};
+use crate::settings::{CustomTheme, FONT_SIZES, Settings, ThemeId, ThemeMode};
+use crate::theme::glass::GLASS_OPACITY_DEFAULT;
 
 /// 当前配置版本。迁移链从 1 开始，每加一版在这里和 `migrate` 里各加一步。
 pub(crate) const CURRENT_VERSION: u32 = 2;
@@ -35,6 +36,17 @@ pub(crate) const MAX_BYTES: u64 = 65_536;
 pub(crate) struct Preferences {
     pub version: u32,
     pub theme_mode: ThemeMode,
+    /// 命令面板点选的预设；`None` 为按 `theme_mode` 解析（旧行为）。
+    /// 旧配置文件没有这个字段时按 `None` 处理，不用升版本。
+    pub theme_preset: Option<ThemeId>,
+    /// 玻璃效果开关。旧配置文件没有这个字段时默认开启（与当前默认
+    /// 一致），所以用 `default_glass_enabled` 而不是 `bool` 的 `Default`。
+    #[serde(default = "default_glass_enabled")]
+    pub glass: bool,
+    /// 浮层底色不透明度。缺字段时回默认；手改越界在 `apply` 里钳制，
+    /// 不拒绝整份配置。
+    #[serde(default = "default_glass_opacity")]
+    pub glass_opacity: f32,
     pub custom: CustomTheme,
     pub font_family: Option<String>,
     pub font_size: f32,
@@ -50,6 +62,9 @@ impl Default for Preferences {
         Self {
             version: CURRENT_VERSION,
             theme_mode: ThemeMode::System,
+            theme_preset: None,
+            glass: true,
+            glass_opacity: GLASS_OPACITY_DEFAULT,
             custom: CustomTheme::default(),
             font_family: None,
             font_size: 13.,
@@ -78,6 +93,9 @@ impl Preferences {
     pub(crate) fn from_settings(settings: &Settings, fonts: &[String]) -> Self {
         Self {
             theme_mode: settings.mode,
+            theme_preset: settings.preset,
+            glass: settings.glass,
+            glass_opacity: settings.glass_opacity,
             custom: settings.custom,
             font_family: fonts.get(settings.font_family).cloned(),
             font_size: settings.font_size(),
@@ -98,7 +116,13 @@ impl Preferences {
             .position(|size| *size == self.font_size)
             .unwrap_or(2);
         settings.shell = self.shell;
+        settings.glass = self.glass;
+        // 手改的透度可能越界或非有限，在这里钳制，不拒绝整份配置。
+        settings.set_glass_opacity(self.glass_opacity);
         settings.set_mode(self.theme_mode, system_dark);
+        // `Custom` 不是预设：手改的配置文件里出现时直接丢弃，不破坏解析。
+        settings.preset = self.theme_preset.filter(|theme| *theme != ThemeId::Custom);
+        settings.resolve_theme(system_dark);
     }
 
     /// 校验解码后的数据。存储层只负责迁移，字段约束都在这里。
@@ -116,6 +140,14 @@ impl Preferences {
     }
 }
 
+fn default_glass_enabled() -> bool {
+    true
+}
+
+fn default_glass_opacity() -> f32 {
+    GLASS_OPACITY_DEFAULT
+}
+
 pub(crate) fn default_path() -> Option<PathBuf> {
     if let Some(base) = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
@@ -126,4 +158,92 @@ pub(crate) fn default_path() -> Option<PathBuf> {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .map(|home| home.join(".config/siskin/settings.json"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn picked_preset_survives_a_save_and_load_round_trip() {
+        let mut settings = Settings::default();
+        settings.set_theme(ThemeId::TokyoNight, false);
+        let stored = Preferences::from_settings(&settings, &[]);
+        let json = serde_json::to_string(&stored).expect("配置必须能序列化");
+        let loaded: Preferences = serde_json::from_str(&json).expect("配置必须能反序列化");
+        assert_eq!(loaded.theme_preset, Some(ThemeId::TokyoNight));
+
+        let mut restored = Settings::default();
+        loaded.apply(&mut restored, &[], false);
+        assert_eq!(restored.theme, ThemeId::TokyoNight);
+        assert_eq!(restored.preset, Some(ThemeId::TokyoNight));
+    }
+
+    #[test]
+    fn old_config_without_a_preset_field_still_loads() {
+        // 升级前的配置文件没有 theme_preset 字段：按“按模式解析”处理，
+        // 不能因此拒绝整份配置。
+        let loaded: Preferences = serde_json::from_str(r#"{"version":2,"theme_mode":"dark"}"#)
+            .expect("旧配置必须能反序列化");
+        assert_eq!(loaded.theme_preset, None);
+        let mut settings = Settings::default();
+        loaded.apply(&mut settings, &[], false);
+        assert_eq!(settings.theme, ThemeId::Graphite);
+    }
+
+    #[test]
+    fn a_hand_edited_custom_preset_is_dropped_not_fatal() {
+        let loaded: Preferences =
+            serde_json::from_str(r#"{"version":2,"theme_mode":"light","theme_preset":"custom"}"#)
+                .expect("配置必须能反序列化");
+        let mut settings = Settings::default();
+        loaded.apply(&mut settings, &[], false);
+        assert_eq!(settings.preset, None);
+        assert_eq!(settings.theme, ThemeId::Paper);
+    }
+
+    #[test]
+    fn glass_setting_survives_a_save_and_load_round_trip() {
+        let mut settings = Settings::default();
+        settings.toggle_glass();
+        settings.set_glass_opacity(0.95);
+        let stored = Preferences::from_settings(&settings, &[]);
+        let json = serde_json::to_string(&stored).expect("配置必须能序列化");
+        let loaded: Preferences = serde_json::from_str(&json).expect("配置必须能反序列化");
+        assert!(!loaded.glass);
+        assert_eq!(loaded.glass_opacity, 0.95);
+
+        let mut restored = Settings::default();
+        loaded.apply(&mut restored, &[], false);
+        assert!(!restored.glass);
+        assert_eq!(restored.glass_opacity, 0.95);
+    }
+
+    #[test]
+    fn old_config_without_glass_fields_loads_with_glass_on() {
+        // 升级前的配置文件没有 glass 字段：默认开启、透度 0.85，
+        // 不能因此拒绝整份配置。
+        let loaded: Preferences = serde_json::from_str(r#"{"version":2,"theme_mode":"dark"}"#)
+            .expect("旧配置必须能反序列化");
+        assert!(loaded.glass);
+        assert_eq!(loaded.glass_opacity, GLASS_OPACITY_DEFAULT);
+        let mut settings = Settings::default();
+        settings.toggle_glass();
+        loaded.apply(&mut settings, &[], false);
+        assert!(settings.glass);
+        assert_eq!(settings.glass_opacity, GLASS_OPACITY_DEFAULT);
+    }
+
+    #[test]
+    fn a_hand_edited_opacity_is_clamped_not_fatal() {
+        let loaded: Preferences = serde_json::from_str(r#"{"version":2,"glass_opacity":0.2}"#)
+            .expect("配置必须能反序列化");
+        let mut settings = Settings::default();
+        loaded.apply(&mut settings, &[], false);
+        assert_eq!(settings.glass_opacity, GLASS_OPACITY_DEFAULT);
+        let loaded: Preferences = serde_json::from_str(r#"{"version":2,"glass_opacity":1.5}"#)
+            .expect("配置必须能反序列化");
+        loaded.apply(&mut settings, &[], false);
+        assert_eq!(settings.glass_opacity, 0.95);
+    }
 }

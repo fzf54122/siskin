@@ -163,6 +163,8 @@ fn shortcut_stage(app: &mut SiskinApp, press: KeyPress<'_>) -> Option<Handled> {
         (true, false, ",") => Action::OpenSettings,
         (true, false, "1") => Action::OpenTerminal,
         (true, true, "i") => Action::ToggleInspector,
+        (true, true, "a") => Action::ToggleAgentSidebar,
+        (true, true, "g") => Action::ToggleGlass,
         (true, true, "t") => Action::CycleThemeMode,
         (true, true, "f") => Action::OpenSearch,
         (true, true, "n") => Action::NewSession,
@@ -238,6 +240,16 @@ fn terminal_stage(app: &mut SiskinApp, press: KeyPress<'_>) -> Option<Handled> {
             return Some(Handled::Redraw);
         }
         return None;
+    }
+    // 命令面板 / 搜索条都没打开时，ghost 才能接管 Tab / Right / Esc；
+    // 它们打开时前面的环已经消费了按键，不会走到这里；关闭确认打开时
+    // 更是第一环就接管了。面板打开时 Tab 会落到这里，但 ghost 接管
+    // 必须以面板关闭为前提，否则补全会抢走面板的按键。
+    if app.palette.is_none()
+        && app.search.is_none()
+        && let Some(handled) = app.ghost_key(&press)
+    {
+        return Some(handled);
     }
     let modes: KeyModes = app
         .session()

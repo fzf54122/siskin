@@ -3,6 +3,8 @@
 // @FileName: widgets.rs
 // @Software: Siskin
 
+use gpui::{HighlightStyle, Hsla, StyledText};
+
 use super::*;
 
 pub(super) fn label(value: impl Into<SharedString>, color: u32) -> Div {
@@ -10,6 +12,28 @@ pub(super) fn label(value: impl Into<SharedString>, color: u32) -> Div {
         .text_size(px(14.))
         .text_color(rgb(color))
         .child(value.into())
+}
+
+/// 带模糊命中高亮的标签：命中字符用强调色加粗，其余用默认色。
+/// `ranges` 为空时等价于 `label`。
+pub(super) fn highlight_label(text: &str, ranges: &[(usize, usize)], p: &Palette) -> Div {
+    if ranges.is_empty() {
+        return label(text, p.ink);
+    }
+    let highlights = ranges.iter().map(|(start, end)| {
+        (
+            *start..*end,
+            HighlightStyle {
+                color: Some(Hsla::from(rgb(p.accent))),
+                font_weight: Some(FontWeight::BOLD),
+                ..Default::default()
+            },
+        )
+    });
+    div()
+        .text_size(px(14.))
+        .text_color(rgb(p.ink))
+        .child(StyledText::new(text).with_highlights(highlights))
 }
 
 pub(super) fn detail(value: impl Into<SharedString>, palette: &Palette) -> Div {

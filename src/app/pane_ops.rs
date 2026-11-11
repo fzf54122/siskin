@@ -42,7 +42,7 @@ impl SiskinApp {
             .collect()
     }
 
-    fn tab_index_containing(&self, id: u64) -> Option<usize> {
+    pub(crate) fn tab_index_containing(&self, id: u64) -> Option<usize> {
         self.sessions
             .iter()
             .find_map(|(index, session)| session.panes.contains(id).then_some(index))

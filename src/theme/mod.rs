@@ -5,6 +5,7 @@
 
 mod colors;
 mod fonts;
+pub(crate) mod glass;
 mod palettes;
 #[cfg(test)]
 mod tests;
@@ -13,7 +14,7 @@ mod tests;
 pub use colors::ACCENTS;
 pub use colors::{CustomTheme, ThemeColor};
 pub use fonts::{mono_fonts, ui_family};
-pub use palettes::{DUSK, GRAPHITE, MOSS, PAPER};
+pub use palettes::{CATPPUCCIN_MOCHA, DUSK, GRAPHITE, MOSS, PAPER, TOKYO_NIGHT};
 
 use colors::{ensure_contrast, mix};
 
@@ -21,12 +22,15 @@ use colors::{ensure_contrast, mix};
 /// 终端字号通常小于界面正文，按更严的一档取。
 const MINIMUM_CONTRAST: f64 = 4.5;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ThemeId {
     Paper,
     Graphite,
     Moss,
     Dusk,
+    CatppuccinMocha,
+    TokyoNight,
     Custom,
 }
 
@@ -34,11 +38,13 @@ pub enum ThemeId {
 // 保留完整列表避免新增主题时再回来补枚举。
 #[allow(dead_code)]
 impl ThemeId {
-    pub const PRESETS: [ThemeId; 4] = [
+    pub const PRESETS: [ThemeId; 6] = [
         ThemeId::Paper,
         ThemeId::Graphite,
         ThemeId::Moss,
         ThemeId::Dusk,
+        ThemeId::CatppuccinMocha,
+        ThemeId::TokyoNight,
     ];
 
     pub fn name(self) -> &'static str {
@@ -47,6 +53,8 @@ impl ThemeId {
             ThemeId::Graphite => "Graphite",
             ThemeId::Moss => "Moss",
             ThemeId::Dusk => "Dusk",
+            ThemeId::CatppuccinMocha => "Catppuccin Mocha",
+            ThemeId::TokyoNight => "Tokyo Night",
             ThemeId::Custom => "自定义",
         }
     }
@@ -57,12 +65,17 @@ impl ThemeId {
             ThemeId::Graphite => "中性深灰",
             ThemeId::Moss => "苔绿浅色",
             ThemeId::Dusk => "靛蓝夜色",
+            ThemeId::CatppuccinMocha => "粉彩摩卡",
+            ThemeId::TokyoNight => "东京夜蓝",
             ThemeId::Custom => "自选底色与强调色",
         }
     }
 
     pub fn is_dark(self) -> bool {
-        matches!(self, ThemeId::Graphite | ThemeId::Dusk)
+        matches!(
+            self,
+            ThemeId::Graphite | ThemeId::Dusk | ThemeId::CatppuccinMocha | ThemeId::TokyoNight
+        )
     }
 }
 
@@ -157,6 +170,8 @@ impl Palette {
             ThemeId::Graphite => GRAPHITE,
             ThemeId::Moss => MOSS,
             ThemeId::Dusk => DUSK,
+            ThemeId::CatppuccinMocha => CATPPUCCIN_MOCHA,
+            ThemeId::TokyoNight => TOKYO_NIGHT,
             ThemeId::Custom => Self::custom(CustomTheme::default()),
         }
     }

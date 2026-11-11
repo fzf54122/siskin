@@ -41,6 +41,12 @@ impl SiskinApp {
         self.commit_settings();
     }
 
+    /// 从命令面板点选一套i置主题；固定选择跟随设置一起落盘。
+    pub(crate) fn set_theme(&mut self, theme: theme::ThemeId) {
+        self.settings.set_theme(theme, self.system_dark);
+        self.commit_settings();
+    }
+
     pub(crate) fn edit_color(&mut self, target: ColorTarget) {
         let current = self.theme();
         let base = if self.settings.mode == ThemeMode::Custom {

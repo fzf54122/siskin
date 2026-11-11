@@ -158,13 +158,17 @@ fn a_readable_custom_foreground_is_kept_verbatim() {
 
 #[test]
 fn default_themes_keep_small_text_readable() {
-    for palette in [PAPER, GRAPHITE] {
+    // 六套预设逐套断言；Moss/Dusk 曾经只有 faint 不达标，修过之后
+    // 不能再悄悄退回去。
+    for theme in ThemeId::PRESETS {
+        let palette = Palette::of(theme);
         for (foreground, background) in [
             (palette.ink, palette.window),
             (palette.muted, palette.window),
             (palette.faint, palette.window),
             (palette.accent, palette.tint),
             (palette.output, palette.terminal),
+            (palette.faint_text, palette.terminal),
         ] {
             let ratio = contrast(foreground, background);
             assert!(
@@ -174,4 +178,54 @@ fn default_themes_keep_small_text_readable() {
             );
         }
     }
+}
+
+#[test]
+fn cursor_accent_stays_visible_on_the_terminal_background() {
+    // 光标色就是 accent；Paper 曾经 accent == ink，光标与正文分不开。
+    for theme in ThemeId::PRESETS {
+        let palette = Palette::of(theme);
+        assert_ne!(palette.accent, palette.ink, "{}", theme.name());
+        let ratio = contrast(palette.accent, palette.terminal);
+        assert!(
+            ratio >= 4.5,
+            "{} 光标 #{:06x}/#{:06x}: {ratio}",
+            theme.name(),
+            palette.accent,
+            palette.terminal
+        );
+    }
+}
+
+#[test]
+fn new_presets_use_their_upstream_palette_values() {
+    // 新主题的核心色直接锚定上游色板，改色值要先核对官方值。
+    let mocha = CATPPUCCIN_MOCHA;
+    assert_eq!(mocha.window, 0x1e1e2e);
+    assert_eq!(mocha.terminal, 0x181825);
+    assert_eq!(mocha.ink, 0xcdd6f4);
+    assert_eq!(mocha.accent, 0xcba6f7);
+    assert_eq!(mocha.tint, 0x313244);
+    assert!(mocha.dark);
+
+    let tokyo = TOKYO_NIGHT;
+    assert_eq!(tokyo.window, 0x1a1b26);
+    assert_eq!(tokyo.terminal, 0x16161e);
+    assert_eq!(tokyo.ink, 0xc0caf5);
+    assert_eq!(tokyo.accent, 0x7aa2f7);
+    assert_eq!(tokyo.tint, 0x283457);
+    assert!(tokyo.dark);
+
+    // 原有四套名字不变，PRESETS 里仍按原来顺序排在前面。
+    assert_eq!(
+        ThemeId::PRESETS,
+        [
+            ThemeId::Paper,
+            ThemeId::Graphite,
+            ThemeId::Moss,
+            ThemeId::Dusk,
+            ThemeId::CatppuccinMocha,
+            ThemeId::TokyoNight,
+        ]
+    );
 }

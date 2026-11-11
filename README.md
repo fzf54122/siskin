@@ -30,7 +30,7 @@
 
 界面刻意留白：没有侧栏，没有标题栏，窗口顶端只有一条 28px 的会话 tab。
 tab 带状态点（运行中 / 启动中 / 失败 / 已退出），跟随当前工作目录，
-右侧只留新建与会话设置两个入口。其余操作走快捷键和命令面板。
+右侧只留新建、Agent 侧栏与设置三个入口。其余操作走快捷键和命令面板。
 多会话时 tab 并排，单会话时几乎不占位。
 
 能做的事：
@@ -91,7 +91,10 @@ siskin -V                        # 打印版本
 | 按键 | 行为 |
 | --- | --- |
 | 直接输入 | 写入当前会话的 PTY |
-| `Enter` / `Tab` / `Backspace` | 原样交给 shell |
+| `Enter` / `Backspace` | 原样交给 shell |
+| `Tab` | 有行内补全提示时接受整条，否则原样交给 shell |
+| `→`（右方向键） | 有行内补全提示时接受下一个词，否则原样交给 shell |
+| `Esc` | 有行内补全提示时取消提示，否则原样交给 shell |
 | `Ctrl+A` … `Ctrl+Z` | 作为 C0 控制码下发（`Ctrl+C`、`Ctrl+D`、`Ctrl+Z` 正常） |
 | `Alt+键` | 加 `ESC` 前缀 |
 | `Ctrl+Shift+C` | 复制当前选区 |
@@ -105,6 +108,7 @@ siskin -V                        # 打印版本
 | `Ctrl+1` | 回到终端 |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | 切换会话 |
 | `Ctrl+Shift+I` | 显示 / 收起右侧会话信息 |
+| `Ctrl+Shift+A` | 显示 / 收起 Agent 侧栏（每会话当前命令与状态） |
 | `Ctrl+Shift+T` | 循环切换主题模式 |
 | `Ctrl+Shift+F` | 搜索滚动区；`Enter` 下一个，`Shift+Enter` 上一个，`Esc` 关闭 |
 | `Ctrl+Click` | 打开光标下的链接或 `path:line:col` |
@@ -112,6 +116,10 @@ siskin -V                        # 打印版本
 
 应用开启鼠标上报（`vim` 的鼠标模式、`htop` 等）时，点击与滚轮会转成 SGR 序列发给程序，
 此时按住 `Shift` 才能本地选字。
+
+行内自动补全（ghost text）：输入时按本会话已执行命令联想后缀，弱化色画在光标之后，
+`Tab` 接受整条、`→` 接受一个词、`Esc` 取消；需要 shell 发 OSC 133 标记，
+见 `docs/shell-integration.md`。
 
 ## 主题与字体
 
