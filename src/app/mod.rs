@@ -270,6 +270,13 @@ impl SiskinApp {
         self.dispatch(action);
     }
 
+    /// P0 性能采样开/关。只翻共享采样器的开关，不写终端内容、
+    /// 不改会话状态；关闭时清空已采样本，避免旧数据混进新基线。
+    pub(crate) fn toggle_perf(&mut self) {
+        let enabled = !crate::domain::perf::is_enabled();
+        crate::domain::perf::set_enabled(enabled);
+    }
+
     // ---- 查询 ----
 }
 

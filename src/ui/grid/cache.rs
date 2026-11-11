@@ -187,6 +187,15 @@ impl ShapeCache {
     }
 }
 
+/// 累计命中 / 未命中，供 P0 采样在 prepaint 后补进最近一条样本。
+/// 锁中毒时返回零而不是拖死渲染：这只是诊断数字。
+pub(crate) fn stats_snapshot() -> (u64, u64) {
+    match shared().lock() {
+        Ok(cache) => (cache.hits, cache.misses),
+        Err(_) => (0, 0),
+    }
+}
+
 /// 进程级共享缓存。整形只依赖文本系统，与哪个窗口无关；多窗口共享
 /// 同一份缓存不会串结果，因为键里带了字体与字号。
 pub(crate) fn shared() -> &'static Mutex<ShapeCache> {

@@ -30,6 +30,7 @@ pub(crate) enum Action {
     ScrollToTop,
     ScrollToBottom,
     OpenSearch,
+    TogglePerf,
 }
 
 /// 动作的副作用范围。图形层据此决定刷新窗口还是退出。

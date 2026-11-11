@@ -56,9 +56,20 @@ impl Element for TerminalGrid {
             .floor() as usize)
             .max(1)
             + 1;
-        let layouts = (0..self.frame.rows.len().min(visible_rows))
+        // P0 采样：只在开启时计时。`Instant` 本身很便宜，锁与记录
+        // 都只在采样开启时才走，避免给正式渲染加固定开销。
+        let shape_started = std::time::Instant::now();
+        let layouts: Vec<RowLayout> = (0..self.frame.rows.len().min(visible_rows))
             .map(|row| self.shape_row(row, origin, window))
             .collect();
+        if crate::domain::perf::is_enabled() {
+            let draw_tasks = layouts
+                .iter()
+                .map(|row| row.runs.len() + row.backgrounds.len() + row.underlines.len())
+                .sum::<usize>() as u32;
+            let (hits, misses) = super::cache::stats_snapshot();
+            crate::domain::perf::note_render(shape_started.elapsed(), draw_tasks, hits, misses);
+        }
         self.store_cursor(origin, bounds.origin);
         layouts
     }

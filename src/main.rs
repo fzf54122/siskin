@@ -37,6 +37,8 @@ struct Args {
     working_directory: Option<PathBuf>,
     /// `-e <program> [args...]`：执行命令，退出即关窗。
     command: Option<Vec<String>>,
+    /// `--perf`：开启 P0 性能采样（等价于 `SISKIN_PERF=1`）。
+    perf: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -59,9 +61,12 @@ fn parse_args() -> Result<Args, String> {
                 println!("siskin {}", env!("CARGO_PKG_VERSION"));
                 std::process::exit(0);
             }
+            "--perf" => {
+                args.perf = true;
+            }
             "--help" | "-h" => {
                 println!(
-                    "siskin {}\n\n用法：siskin [选项] [-- -e 命令 [参数...]]\n\n  -d, --working-directory <目录>  新会话的起始目录\n  -e, --command <命令> [参数...]  执行命令，退出即关闭窗口\n  -V, --version                   打印版本\n",
+                    "siskin {}\n\n用法：siskin [选项] [-- -e 命令 [参数...]]\n\n  -d, --working-directory <目录>  新会话的起始目录\n  -e, --command <命令> [参数...]  执行命令，退出即关闭窗口\n  --perf                          开启性能采样（见 docs/perf-baseline.md）\n  -V, --version                   打印版本\n",
                     env!("CARGO_PKG_VERSION")
                 );
                 std::process::exit(0);
@@ -137,9 +142,13 @@ fn build_app(
     window: &mut gpui::Window,
     cx: &mut gpui::Context<SiskinApp>,
     spec: Option<SessionSpec>,
+    perf: bool,
 ) -> SiskinApp {
     let window_id = x11_window_id(window);
     let mut app = SiskinApp::new(cx);
+    if perf {
+        crate::domain::perf::set_enabled(true);
+    }
     app.set_system_dark(matches!(
         window.appearance(),
         gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark
@@ -216,6 +225,7 @@ fn main() {
 
     // 闭包需要 `'static`，把命令会话的所有权先移进一个只读句柄。
     let spec = Arc::new(session_spec(&args));
+    let perf = args.perf;
     let instance = Arc::new(instance);
 
     application().run(move |cx: &mut App| {
@@ -233,7 +243,7 @@ fn main() {
         let spec_for_window = spec.clone();
         let opened = cx.open_window(options, move |window, cx| {
             let spec = spec_for_window.as_ref().clone();
-            cx.new(|cx| build_app(window, cx, spec))
+            cx.new(|cx| build_app(window, cx, spec, perf))
         });
         let window_handle = match opened {
             Ok(handle) => handle,

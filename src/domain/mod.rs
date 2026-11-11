@@ -8,6 +8,7 @@
 pub(crate) mod action;
 pub(crate) mod key;
 pub(crate) mod metrics;
+pub(crate) mod perf;
 pub(crate) mod scroll;
 pub(crate) mod session;
 pub(crate) mod shell_spec;

@@ -127,11 +127,15 @@ impl Session {
         }
     }
 
-    pub(crate) fn refresh(&mut self, colors: &AnsiColors) {
+    /// 构帧耗时由调用方记进 P0 采样。没有 PTY 时返回零时长，
+    /// 不把「没会话」算成一次昂贵的空帧。
+    pub(crate) fn refresh(&mut self, colors: &AnsiColors) -> std::time::Duration {
+        let started = std::time::Instant::now();
         if let Some(pty) = self.pty.as_ref() {
             self.frame = pty.frame(colors);
             self.frame_dirty = false;
         }
+        started.elapsed()
     }
 
     /// 从 PTY 收到输出后调用。构帧由事件轮次的 `refresh` 统一做，

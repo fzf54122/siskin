@@ -106,10 +106,34 @@ impl Render for SiskinApp {
             .when(self.close_request.is_some(), |root| {
                 root.child(self.close_confirmation(&palette, cx))
             })
+            .when(crate::domain::perf::is_enabled(), |root| {
+                root.child(self.perf_overlay(&palette))
+            })
     }
 }
 
 impl SiskinApp {
+    /// P0 性能 overlay。只在采样开启时出现，只显示数字汇总，
+    /// 不显示终端内容、命令或剪贴板。数字来自最近 600 帧窗口。
+    fn perf_overlay(&self, palette: &Palette) -> Stateful<Div> {
+        let text = crate::domain::perf::summary().one_line();
+        div()
+            .id("perf-overlay")
+            .debug_selector(|| "perf-overlay".into())
+            .absolute()
+            .top(px(36.))
+            .right(px(12.))
+            .px(px(10.))
+            .py(px(6.))
+            .rounded(px(6.))
+            .bg(rgb(palette.window))
+            .border_1()
+            .border_color(rgb(palette.border))
+            .text_size(px(11.))
+            .text_color(rgb(palette.ink))
+            .child(text)
+    }
+
     /// 窗口标题跟随最新 OSC 标题；没有时退回会话名。
     /// 只在变化时设置，避免每帧触发平台调用。
     fn sync_window_title(&mut self, window: &mut Window) {

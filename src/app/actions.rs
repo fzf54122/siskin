@@ -41,6 +41,7 @@ impl Action {
             Action::ScrollToTop => app.scroll_to_top(),
             Action::ScrollToBottom => app.scroll_to_bottom(),
             Action::OpenSearch => app.open_search(),
+            Action::TogglePerf => app.toggle_perf(),
         }
         app.sync_menu();
         ActionEffect::Redraw
@@ -57,7 +58,7 @@ pub(crate) struct PaletteEntry {
     pub action: Action,
 }
 
-pub(crate) static PALETTE_ENTRIES: [PaletteEntry; 12] = [
+pub(crate) static PALETTE_ENTRIES: [PaletteEntry; 13] = [
     PaletteEntry {
         label: "新建会话",
         keywords: "new session tab open",
@@ -141,5 +142,12 @@ pub(crate) static PALETTE_ENTRIES: [PaletteEntry; 12] = [
         hint: "终端等宽字号按档位调整",
         keys: "Ctrl +/-",
         action: Action::FontLarger,
+    },
+    PaletteEntry {
+        label: "性能采样开/关",
+        keywords: "performance perf fps baseline metrics",
+        hint: "显示 FPS、P95、整形与构帧耗时，可复现基线用",
+        keys: "",
+        action: Action::TogglePerf,
     },
 ];

@@ -122,14 +122,19 @@ impl SiskinApp {
     }
 
     /// 消费一次事件。返回 `true` 表示界面需要重绘。
+    /// P0 采样只在 `changed` 时记一条：空闲轮次不触发渲染，
+    /// 记进来会把 FPS 虚报到 16ms 定时器的 62.5。
     pub(crate) fn drain_events(&mut self) -> bool {
+        let started = std::time::Instant::now();
         let mut changed = false;
+        let mut pty_events: u32 = 0;
         let mut exited: Vec<(u64, Option<i32>)> = Vec::new();
         let Some(receiver) = self.event_receiver.clone() else {
             return false;
         };
         while let Ok((id, event)) = receiver.try_recv() {
             changed = true;
+            pty_events = pty_events.saturating_add(1);
             match event {
                 VtEvent::Title(title) => self.apply_title(id, &title),
                 VtEvent::ResetTitle => {
@@ -156,6 +161,36 @@ impl SiskinApp {
             }
         }
         let colors = self.ansi();
+        changed = changed || self.apply_exits(exited);
+        let (sessions_refreshed, frame_build) = self.refresh_dirty_sessions(&colors);
+        changed = changed || sessions_refreshed > 0;
+        if changed {
+            self.record_perf(started, frame_build, pty_events, sessions_refreshed);
+        }
+        changed
+    }
+
+    /// 只刷新这一轮真有输出的会话。空闲会话的 Frame 是准确的，
+    /// 重新构一次纯属白锁 PTY、白拷贝一帧网格。
+    fn refresh_dirty_sessions(
+        &mut self,
+        colors: &crate::io::ansi::AnsiColors,
+    ) -> (u32, std::time::Duration) {
+        let mut refreshed: u32 = 0;
+        let mut build = std::time::Duration::ZERO;
+        for index in 0..self.sessions.len() {
+            if let Some(session) = self.sessions.get_mut(index)
+                && session.frame_dirty()
+            {
+                build += session.refresh(colors);
+                refreshed = refreshed.saturating_add(1);
+            }
+        }
+        (refreshed, build)
+    }
+
+    fn apply_exits(&mut self, exited: Vec<(u64, Option<i32>)>) -> bool {
+        let mut changed = false;
         for (id, code) in exited {
             let Some(index) = self.sessions.position(id) else {
                 continue;
@@ -169,17 +204,30 @@ impl SiskinApp {
                 self.request_quit = true;
             }
         }
-        for index in 0..self.sessions.len() {
-            // 只刷新这一轮真有输出的会话。空闲会话的 Frame 是准确的，
-            // 重新构一次纯属白锁 PTY、白拷贝一帧网格。
-            if let Some(session) = self.sessions.get_mut(index)
-                && session.frame_dirty()
-            {
-                session.refresh(&colors);
-                changed = true;
-            }
-        }
         changed
+    }
+
+    fn record_perf(
+        &self,
+        started: std::time::Instant,
+        frame_build: std::time::Duration,
+        pty_events: u32,
+        sessions_refreshed: u32,
+    ) {
+        if !crate::domain::perf::is_enabled() {
+            return;
+        }
+        // 缓存命中数由 prepaint 补进同一条样本：app 层不反向依赖 ui。
+        crate::domain::perf::record(crate::domain::perf::PerfSample {
+            frame_time: started.elapsed(),
+            shape_time: std::time::Duration::ZERO,
+            frame_build_time: frame_build,
+            pty_events,
+            sessions_refreshed,
+            draw_tasks: 0,
+            shape_hits: 0,
+            shape_misses: 0,
+        });
     }
 
     /// 标记某个会话有新输出。会话已关闭时静默忽略：关闭与事件可能并发。
