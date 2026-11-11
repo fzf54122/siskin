@@ -281,8 +281,10 @@ impl TerminalGrid {
     /// 光标矩形给输入法定位候选框；网格原点给鼠标换算行列。
     fn store_cursor(&self, origin: Point<Pixels>, element_origin: Point<Pixels>) {
         let cursor = self.frame.cursor;
+        // 光标滚出可视区时不留锚点：输入法候选框不能钉在幻影位置上。
+        // 键入会先回到底部，下一帧锚点随可见光标恢复。
         if let Ok(mut slot) = self.cursor_slot.lock() {
-            *slot = Some(Bounds {
+            *slot = cursor.visible.then(|| Bounds {
                 origin: self.cell_origin(origin, cursor.row, cursor.column),
                 size: size(px(self.metrics.cell_width), px(self.metrics.row_height)),
             });

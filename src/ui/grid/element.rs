@@ -96,14 +96,18 @@ impl Element for TerminalGrid {
             gpui::ElementInputHandler::new(bounds, self.view.clone()),
             cx,
         );
-        cursor::paint_cursor(
-            self.frame.cursor,
-            self.metrics,
-            bounds.origin + point(px(self.metrics.padding), px(self.metrics.padding)),
-            self.cursor_color,
-            self.palette_fg,
-            self.cursor_focused,
-            window,
-        );
+        // 滚进历史时光标不在可视区内：`frame.cursor.visible` 为假，
+        // 不画底行那个被 clamp 出来的幻影光标。回到底部即恢复。
+        if self.frame.cursor.visible {
+            cursor::paint_cursor(
+                self.frame.cursor,
+                self.metrics,
+                bounds.origin + point(px(self.metrics.padding), px(self.metrics.padding)),
+                self.cursor_color,
+                self.palette_fg,
+                self.cursor_focused,
+                window,
+            );
+        }
     }
 }

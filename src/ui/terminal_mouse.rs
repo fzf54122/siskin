@@ -42,6 +42,9 @@ impl SiskinApp {
     /// 分隔线拖动中不处理选区；选区拖到别的叶上时也不跨叶改选区，
     /// 否则松开后 PRIMARY 里会是另一 pane 的文本。
     pub(super) fn drag_to(&mut self, session_id: u64, position: gpui::Point<gpui::Pixels>) -> bool {
+        if self.scrollbar_drag.is_some() {
+            return false;
+        }
         if self.pane_drag.is_some() {
             return false;
         }

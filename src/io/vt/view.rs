@@ -49,6 +49,9 @@ pub(crate) struct CursorView {
     pub row: usize,
     pub column: usize,
     pub shape: CursorShape,
+    /// 光标是否落在可视区内。滚进历史时真实光标在可视区之下，
+    /// `row` 只是被 clamp 到底行的结果，画出来就是幻影光标。
+    pub visible: bool,
 }
 
 /// 一帧的完整内容。只在主线程构造，渲染阶段直接读。
@@ -67,6 +70,7 @@ impl Frame {
                 row: 0,
                 column: 0,
                 shape: CursorShape::Hidden,
+                visible: true,
             },
             display_offset: 0,
         }
@@ -107,6 +111,9 @@ where
             row: cursor_row(cursor.point.line, rows.len()),
             column: cursor.point.column.0,
             shape: cursor.shape,
+            // 滚离底部时光标在可视区之下：display_offset > 0 即不可见，
+            // `row` 的 clamp 只是防御，画出来会是底行的幻影光标。
+            visible: content.display_offset == 0,
         },
         display_offset: content.display_offset,
         rows,

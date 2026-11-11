@@ -259,6 +259,14 @@ impl SiskinApp {
             changed = true;
             if self.exit_on_child_exit && index == self.active_index() {
                 self.request_quit = true;
+                continue;
+            }
+            // 子进程已退出：会话不再运行，`needs_close_confirmation`
+            // 要求 is_running，已退出会话不会弹确认——按 Ghostty 的
+            // 行为直接关掉该标签/窗格，不留死格等人按 Enter。
+            // 最后标签走 `finish_close`，照样是请求退出窗口。
+            if let Some(index) = self.sessions.position(id) {
+                self.close_session(index);
             }
         }
         changed

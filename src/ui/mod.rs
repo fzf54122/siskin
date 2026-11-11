@@ -13,6 +13,7 @@ mod input_handler;
 mod inspector;
 mod palette;
 mod preview;
+pub(crate) mod scrollbar;
 mod settings;
 mod sidebar;
 mod terminal;

@@ -26,6 +26,12 @@ impl SiskinApp {
             .flex()
             .flex_col()
             .on_mouse_move(cx.listener(|app, event: &MouseMoveEvent, _, cx| {
+                if app.scrollbar_drag.is_some() {
+                    if app.update_scrollbar_drag(event.position.y.as_f32()) {
+                        cx.notify();
+                    }
+                    return;
+                }
                 if app.pane_drag.is_some() {
                     app.update_pane_drag(event.position);
                     cx.notify();
@@ -34,6 +40,10 @@ impl SiskinApp {
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|app, _: &MouseUpEvent, _, cx| {
+                    if app.end_scrollbar_drag() {
+                        cx.notify();
+                        return;
+                    }
                     if app.pane_drag.is_some() {
                         app.end_pane_drag();
                         cx.notify();
@@ -310,6 +320,9 @@ impl SiskinApp {
             )
             .when(scrolled, |view| {
                 view.child(self.scroll_bottom_button(session_id, p, cx))
+            })
+            .when_some(self.scrollbar(session_id, p, cx), |view, bar| {
+                view.child(bar)
             })
     }
 

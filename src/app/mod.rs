@@ -76,6 +76,8 @@ pub(crate) struct SiskinApp {
     pub(crate) pane_area: Bounds<Pixels>,
     /// 分隔线拖动状态；与文本选区的 `drag` 是两个字段，不共用。
     pub(crate) pane_drag: Option<PaneDrag>,
+    /// 滚动条 thumb 拖动状态；拖动中指针离开细条也继续处理。
+    pub(crate) scrollbar_drag: Option<crate::ui::scrollbar::ScrollbarDrag>,
     pub focus: FocusHandle,
     pub mono: SharedString,
     pub ui: SharedString,
@@ -157,6 +159,7 @@ impl SiskinApp {
             pane_bounds: std::collections::HashMap::new(),
             pane_area: Self::initial_pane_area(),
             pane_drag: None,
+            scrollbar_drag: None,
             focus: cx.focus_handle(),
             mono: mono_fonts[0].clone().into(),
             ui: theme::ui_family(&installed).to_string().into(),

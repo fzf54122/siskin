@@ -46,6 +46,12 @@ impl ScrollOffset {
         self.pending = 0.;
     }
 
+    /// 滚动条跳转时只清亚行余量：指定行就是指定行，不留半行偏移，
+    /// 但已提交的行数不动，它与 PTY 自己的偏移无关。
+    pub(crate) fn clear_pending(&mut self) {
+        self.pending = 0.;
+    }
+
     /// 跳到滚动区顶部。余量同样清零，顶格就是顶格。
     pub(crate) fn snap_to_top(&mut self) {
         self.lines = i32::MAX;

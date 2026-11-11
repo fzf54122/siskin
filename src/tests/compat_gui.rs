@@ -204,3 +204,92 @@ fn x10_mouse_report_reaches_the_program(cx: &mut TestAppContext) {
     // ESC [ M SP % #
     mouse_report_reaches_file(cx, "\\033[?1000h", false, &[0x1b, b'[', b'M', 32, 37, 35]);
 }
+
+#[gpui::test]
+fn ctrl_d_on_empty_prompt_closes_the_session(cx: &mut TestAppContext) {
+    let (view, cx) = new_pty_session(cx);
+    // 等 shell 就绪：帧里出现非空内容即已到提示符。不认提示符字符本身——
+    // root 下 zsh 提示符是 `#`，普通用户是 `%`，写死任一都会误判。
+    assert!(
+        poll_until(&view, cx, |app| { !frame_text(app).trim().is_empty() }),
+        "shell 15 秒内未输出提示符"
+    );
+    // 先 Ctrl+C 清掉提示行上可能残留的输入，再 Ctrl+D：空提示符的
+    // EOF 让 shell 退出；连按几次也无妨（zsh 的 ignoreeof 只挡有限次）。
+    for _ in 0..3 {
+        write_session(&view, cx, b"\x03\x04");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    assert!(
+        poll_until(&view, cx, |app| { app.sessions.len() == 1 }),
+        "Ctrl+D 后退出的标签 15 秒内未自动关闭"
+    );
+    assert_eq!(read(&view, cx, |app| { app.active_index() }), 0);
+}
+
+#[gpui::test]
+fn ctrl_d_on_nonempty_prompt_does_not_close_the_session(cx: &mut TestAppContext) {
+    let (view, cx) = new_pty_session(cx);
+    // 帧里出现非空内容即已到提示符（root 下是 `#`，普通用户是 `%`）。
+    assert!(
+        poll_until(&view, cx, |app| { !frame_text(app).trim().is_empty() }),
+        "shell 15 秒内未输出提示符"
+    );
+    write_session(&view, cx, b"abc");
+    assert!(
+        poll_until(&view, cx, |app| { frame_text(app).contains("abc") }),
+        "输入回显 15 秒内未出现"
+    );
+    write_session(&view, cx, b"\x04");
+    // 排空事件，确认会话还在：EOF 只是 shell 行编辑删一个字符。
+    view.update(cx, |app, _| {
+        let _ = app.drain_events();
+    });
+    std::thread::sleep(Duration::from_millis(500));
+    view.update(cx, |app, _| {
+        let _ = app.drain_events();
+    });
+    assert_eq!(read(&view, cx, |app| { app.sessions.len() }), 2);
+    assert!(
+        !read(&view, cx, |app| { frame_text(app) }).contains("abc"),
+        "Ctrl+D 应只删一个字符"
+    );
+}
+
+#[gpui::test]
+fn scrollbar_jump_scrolls_to_the_requested_offset(cx: &mut TestAppContext) {
+    let (view, cx) = new_pty_session(cx);
+    write_session(&view, cx, b"seq 1 200\n");
+    assert!(
+        poll_until(&view, cx, |app| { frame_text(app).contains("200") }),
+        "seq 输出 15 秒内未到尾部"
+    );
+    let id = read(&view, cx, |app| app.active_pane);
+    eprintln!(
+        "DEBUG before scroll_to_top: rows={} history={:?} offset={:?}",
+        read(&view, cx, |app| app.session().frame.rows.len()),
+        read(&view, cx, |app| app.session().history_size()),
+        read(&view, cx, |app| app.session().display_offset()),
+    );
+    view.update(cx, |app, _| app.scroll_to_top());
+    eprintln!(
+        "DEBUG after scroll_to_top: history={:?} offset={:?}",
+        read(&view, cx, |app| app.session().history_size()),
+        read(&view, cx, |app| app.session().display_offset()),
+    );
+    let offset = read(&view, cx, |app| app.session().display_offset());
+    assert!(
+        matches!(offset, Some(offset) if offset > 0),
+        "滚到顶部后偏移应大于 0"
+    );
+    view.update(cx, |app, _| app.scroll_to_offset(id, 0));
+    assert_eq!(
+        read(&view, cx, |app| app.session().display_offset()),
+        Some(0)
+    );
+    view.update(cx, |app, _| app.scroll_to_offset(id, 5));
+    assert_eq!(
+        read(&view, cx, |app| app.session().display_offset()),
+        Some(5)
+    );
+}

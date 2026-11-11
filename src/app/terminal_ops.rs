@@ -67,6 +67,31 @@ impl SiskinApp {
         self.sync_search_frame();
     }
 
+    /// 滚动条跳转：把 `display_offset` 设到目标值。只换偏移不改内容；
+    /// 亚行余量清掉，指定行就是指定行。目标越界时夹到 `[0, history]`。
+    pub(crate) fn scroll_to_offset(&mut self, session_id: u64, offset: usize) {
+        let Some(current) = self
+            .session_by_id(session_id)
+            .and_then(|session| session.display_offset())
+        else {
+            return;
+        };
+        let delta = offset as i32 - current as i32;
+        if delta == 0 {
+            return;
+        }
+        let colors = self.ansi();
+        if let Some(session) = self.session_by_id_mut(session_id) {
+            session.scroll(delta);
+            session.scroll_offset.clear_pending();
+            session.refresh(&colors);
+        }
+        // 搜索条只画在焦点 pane 上，别叶滚动不用同步它的缓存。
+        if session_id == self.active_pane {
+            self.sync_search_frame();
+        }
+    }
+
     /// 命令间跳转：焦点会话按记录滚到目标命令起始行。
     /// 没有可跳的命令时不动，不报错、不刷帧。
     pub(crate) fn jump_command(&mut self, forward: bool) {

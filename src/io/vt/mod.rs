@@ -92,6 +92,32 @@ mod tests {
     }
 
     #[test]
+    fn cursor_is_hidden_while_scrolled_into_history() {
+        let (sender, _receiver) = async_channel::unbounded();
+        let mut screen = OfflineScreen::new(ScreenSize::new(20, 4, 100), sender, 0);
+        for line in 0..10 {
+            screen.feed(format!("line{line}\n").as_bytes());
+        }
+        let frame = screen.frame(&palette());
+        assert!(frame.cursor.visible, "在底部时光标可见");
+        screen
+            .term
+            .scroll_display(alacritty_terminal::grid::Scroll::Delta(3));
+        let frame = screen.frame(&palette());
+        assert_eq!(frame.display_offset, 3);
+        assert!(
+            !frame.cursor.visible,
+            "滚进历史时真实光标在可视区之下，不应画底行的幻影光标"
+        );
+        screen
+            .term
+            .scroll_display(alacritty_terminal::grid::Scroll::Delta(-3));
+        let frame = screen.frame(&palette());
+        assert_eq!(frame.display_offset, 0);
+        assert!(frame.cursor.visible, "回到底部后光标恢复可见");
+    }
+
+    #[test]
     fn wide_characters_keep_their_spacer() {
         let mut screen = screen();
         screen.feed("中文".as_bytes());
