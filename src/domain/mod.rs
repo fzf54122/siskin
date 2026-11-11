@@ -11,6 +11,7 @@ pub(crate) mod metrics;
 pub(crate) mod perf;
 pub(crate) mod scroll;
 pub(crate) mod session;
+pub(crate) mod shell_marks;
 pub(crate) mod shell_spec;
 pub(crate) mod text_edit;
 

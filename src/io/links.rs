@@ -8,7 +8,8 @@
 
 use std::path::{Path, PathBuf};
 
-/// 允许打开的协议。`file://` 只在路径存在时才算有效。
+/// 允许打开的协议。`file://` 在这里不检查路径存在性，直接交给
+/// 系统 opener（`open` 不做存在性校验）；其余协议一律不产生目标。
 const WEB_SCHEMES: [&str; 3] = ["http://", "https://", "file://"];
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -133,6 +133,20 @@ Siskin 已经具备终端模拟器的核心能力。下一阶段不急着堆功�
 
 分别覆盖 CJK 双宽字符、Emoji、组合字符、Nerd Font 图标与字体回退。核对 VT 网格列宽、GPUI 实际推进量、光标位置和后续字符位置；不能只以 UTF-8 字节数推断宽度。
 
+> 2026-11-11 进展：P1 已落地。整形缓存键已核查覆盖文本、字体族、
+> 字重、斜体、下划线、字号、scale、前景色（`src/ui/grid/cache.rs`），
+> 新增键变化未命中测试；`Session.frame` 改为 `Arc<Frame>`，
+> `frame_snapshot()` 共享快照，`GridInputs` 与 `TerminalGrid` 同改，
+> `refresh()` 只在脏时替换 `Arc`（滚动、选区、resize、输出均置脏），
+> 快照 `Arc::ptr_eq` 与旧快照不变性由测试验证，不会读到半更新帧；
+> 鼠标移动仅在拖选端点换格或鼠标报告实际发出时通知，`drag_to()`
+> 返回 `bool`，上报路径原样返回；选区矩形合并补宽字符 spacer 处理，
+> 6 个测试覆盖缺口与错位；Unicode 5 个 `OfflineScreen` 测试覆盖
+> CJK、Emoji、组合字符、Nerd Font、私用区与混合宽度对齐。
+> 门禁：fmt、结构检查、clippy `-D warnings`、cargo test 175 通过 /
+> 0 失败、cargo build 全部通过。GUI 基线（S1–S7）仍未测，
+> Shape Time / Frame Build Time 的桌面实测对比待填表后做。
+
 ## 6. P2：合并 PTY 更新
 
 目标数据流：
@@ -165,6 +179,24 @@ PTY 读取与 VT 解析
 - 普通输入与交互式程序的响应延迟不因批处理窗口显著变差。
 - 覆盖重复唤醒、PTY 退出、窗口关闭和多个会话并行输出。
 
+> 2026-11-11 进展：P2 已落地。事件已按可合并（`Wakeup`/`Bell` 只标脏，
+> 一轮一构帧）与不可丢、不可乱序（标题、剪贴板、PTY 回写、退出，
+> 按通道顺序处理、退出本轮末尾统一应用）区分；多会话按脏会话
+> 刷新、整轮至多一次 UI 通知（已有行为，测试覆盖）。
+> 轮询间隔可由 `SISKIN_POLL_MS` 覆盖（钳制 2..=100ms，默认 16ms，
+> 解析测试覆盖非法值与边界）。窗口实测（`tests/pty_drain.rs`，
+> 本机 1.5 核 VM，另有 P0 构建并行抢 CPU，绝对耗时偏大、仅作
+> 同条件对比）：`seq 1 1000000` 在 16ms 下 11.80 秒 / 343 轮 /
+> 134 个事件、尾部 `1000000` 在帧里、退出码 0；2ms 下 12.20 秒 /
+> 2063 轮 / 134 个事件——无吞吐收益、轮次 6 倍，默认保持 16ms，
+> 4ms 不再补测（2ms 极端值已无收益）；3 会话各 `seq 1 200000`
+> 并行 87 轮全部退出、尾部完整；5 万个 `Wakeup` 洪泛 115ms 排空、
+> 无丢失。无界通道评估后保留：发送端 `try_send` 下有界通道满了
+> 会静默丢事件——丢 `Wakeup` 会致帧停在旧输出，丢标题、剪贴板、
+> 回写、退出则直接丢用户数据；事件很小且每轮排空，实测 `seq 1M`
+> 全程只产生 134 个事件，队列深度由一轮内读取次数决定。
+> P95 Frame Time / CPU 的桌面对比仍待 S1–S7 基线填表后做。
+
 ## 7. P3：日常体验与 Shell Integration
 
 按日常收益，优先推进分屏和终端历史搜索，再完善命令状态与标签操作。
@@ -176,12 +208,51 @@ PTY 读取与 VT 解析
 - 窗口 resize 时分别计算各 pane 的网格尺寸并发送 PTY 尺寸通知。
 - 先实现单窗口内的布局与生命周期，不先引入通用布局框架。
 
+> 2026-11-11 进展：分屏已落地。`src/app/pane.rs` 是纯数据二叉树
+> `PaneTree`（Leaf 按会话 id 引用 / Split 带 0.1..=0.9 的比例），
+> 一个标签一棵树，分屏叶不进标签栏；`src/app/pane_ops.rs` 管分裂、
+> 焦点循环、关闭（含所有者过户与运行任务确认）、按叶算行列与
+> 分隔线拖动。键位：`Ctrl+Shift+D` 向下分屏、`Ctrl+Shift+R` 向右分屏、
+> `Ctrl+Shift+J/K` 上/下一个 pane、`Ctrl+Shift+Q` 关闭当前 pane
+> （只剩一叶时等同于关标签），均在命令面板可查。焦点 pane 驱动
+> 输入、滚动、搜索与窗口标题；每叶按自己的矩形 resize 并通知 PTY。
+> 门禁：fmt、结构检查、clippy `-D warnings`、cargo test 190 通过 /
+> 0 失败、cargo build 全部通过。注意：一处 NLL 限制——按 id 取可变
+> 会话再取不到退回活动标签的条件重借用，用方法调用写不出来，
+> 所以 `Sessions` 多了 `focused_mut`（直接索引 `items`，两支同一处
+> 索引）；为腾出位置，`session.rs` 里与 `tests/session.rs` 完全重复
+> 的 3 个仓储测试已删除、独有的 cycle 测试保留。另有一处顺带修正：
+> `cell_at` 原来按网格原点换算、没补字体留白，点击会偏约 3 列，
+> 现在按卡片原点 + 留白换算。未验证：真实桌面上的分隔线拖动手感
+> 与多 pane 下的输入法候选框位置（无显示器 VM 上跑不了）。
+
 ### 终端历史搜索
 
 - 搜索数据明确覆盖滚动历史，而不是只对当前 `Frame` 搜索。
 - 支持上一个/下一个匹配、大小写选项和正则模式；无效正则应给出可见错误，不崩溃。
 - 搜索结果能定位到历史行，滚动位置与高亮保持一致。
 - 大历史搜索要测耗时和内存；避免每次按键都复制整份 Frame 或重复扫描不变内容。
+
+> 2026-11-11 进展：历史搜索已落地。`src/io/history_search.rs`
+> 走 `alacritty_terminal` 的 `RegexSearch` / `Term::search_next`
+> 直接扫网格（含 10,000 行 scrollback），不拼整份文本、不新增
+> `regex` 依赖；字面模式转义元字符，大小写用 `(?i)` / `(?-i)`
+> 前缀绕过内置智能大小写；无效正则的构建错误存在
+> `SearchState.error`，搜索条 label 显示「正则错误：…」，不崩溃、
+> 不清空查询词与开关。匹配以绝对行号（`HistorySpan`，负数为历史行）
+> 保存，上限 1000 条；步进时按 `Frame.display_offset` 换算滚动量，
+> 把目标行滚进可见区再高亮；大小写切 `Alt+C`、正则切 `Alt+R`，
+> 搜索条里也有可点的 `Aa` / `.*` 开关。重扫有缓存守卫：查询词、
+> 选项与帧快照 `Arc` 指针都没变时直接复用；新 PTY 输出到达时
+> `drain_events` 在刷新后重算；滚动只同步缓存帧指针，不重扫。
+> 顺带修正一处旧行为：原来高亮只在 `grid_layer` 的 `focused`
+> 为真时画，而搜索条打开时它恒为假，导致边打字边看不到匹配，
+> 现在高亮只按焦点 pane 判定。门禁：fmt、结构检查、clippy
+> `-D warnings`、cargo test 201 通过 / 0 失败（基数 190，
+> 删 3 个已无调用方的可见帧 `find` 测试，新增 14 个）、cargo
+> build 全部通过。10k 行单次全量搜索在测试里 < 2 秒
+> （`seq 1 10000`，断言在 `tests/search_history.rs`）。
+> 未验证：真实桌面上的搜索条开关点击手感与长历史下的逐键输入延迟。
 
 ### OSC 133 Shell Integration
 
@@ -191,11 +262,70 @@ PTY 读取与 VT 解析
 - Shell 未安装集成脚本或未发标记时，终端必须保持正常工作；不能假定每个 shell 都支持。
 - 不从普通文本猜测退出码，也不把终端输出当成可信命令元数据。
 
+> 2026-11-11 进展：OSC 133 已落地。上游解析层把 133 当未知序列丢弃，
+> 所以 `Pty::spawn` 不再用 `EventLoop`，改走自有读线程
+> （`src/io/pty_read.rs` + `src/io/pty_channel.rs`）：`libc::poll`
+> 读 PTY 主端、分段写回、子进程退出与 `drain_on_exit`、同步更新超时，
+> 行为与上游 `EventLoop::spawn` 逐项对齐，只有一处有意不同：退出时
+> 先 drain 残留输出再发 `ChildExit`（上游反过来），否则消费端可能在
+> drain 完成前看到退出 + 空队列就去读帧，`seq 1M` 的 2ms 测试在并行
+> 负载下因此抖动失败过一次（单跑 2.05 秒通过，改顺序后复跑通过）；
+> （`src/io/osc133.rs`，只观测、不剥离，跨分片、超长复位）与行号锚定
+> （按标记偏移分段 `advance`，每到标记处读锁内光标行；行号是单调
+> 稳定行 = `history_size + 视口行 - display_offset`，否则滚进历史后
+> 会整体偏大——该坐标系由 `OfflineScreen` 探针实测确认）。
+> `VtEvent::ShellMark` 经 `drain_events` 按序进每会话命令记录
+> （`src/domain/shell_marks.rs`，A/B/C/D 状态机，上限 100 条、
+> 超了丢最老；退出码只认 `D` 参数；无标记时全空是合法态）。
+> 命令间跳转：`Ctrl+Shift+Up/Down`（命令面板也可查），目标命令滚到
+> 可见区顶部；失败命令（退出码存在且非 0）只在记录里标失败，不做新面板。
+> Shell 配置见 `docs/shell-integration.md`：Bash（5.2.21）与 Zsh（5.9）
+> 的片段已在真实交互式 shell 上验证，`false` 均正确报 `D;1`；
+> Bash 的 `C` 靠 `DEBUG` trap 实现，`PROMPT_COMMAND` 内部命令会再
+> 触发一次 `C`，耗时不准（`A`/`B`/`D`/退出码不受影响）；
+> Fish 本机未装，文档里的片段标为未验证。
+> 门禁：fmt、结构检查、clippy `-D warnings`、cargo test 224 通过 /
+> 0 失败（基数 201，新增 23 个）、cargo build 全部通过。
+> 回归重点（PTY 测试）全部通过，包括 `seq 1M` 与退出码、resize。
+
 ### 标签体验
 
 - 标签拖动排序和显式重命名。
 - 保留已有的关闭确认与会话快照恢复，不重复实现。
 - 自定义快捷键及冲突检测暂缓，先稳定现有按键责任链与默认映射。
+
+> 2026-11-11 进展：标签拖动排序与显式重命名已落地。拖拽选的是
+> 手动鼠标事件方案（b），不是 GPUI 的 `on_drag`：查过 vendored
+> GPUI（rev c427327，`crates/gpui/src/elements/div.rs`），`on_drag`
+> 要求给拖拽物构造一个 `Entity<W: Render>` 拖拽视图，只为在同一
+> 根 tab 条内换位要多搭一套视图，不值；手动方案复用分隔线拖动
+> 已有的 `on_mouse_down` / `on_mouse_move` / `on_mouse_up` 模式：
+> 按下记起始标签，移过别的标签时当场换位（live reorder），松开
+> 结束，被拖标签半透明；换过位后松开合成的 click 会吞掉，不顺
+> 手把拖到的标签选了。不做拖出窗口成新窗口、不做跨窗口。
+> 重命名是双击标签进内联编辑（`ClickEvent::click_count() == 2`），
+> 命令面板也有「重命名当前标签」（`Action::RenameSession`，无快捷
+> 键）；回车/Tab 提交，Esc 取消，清空提交清除显式名；失焦提交
+> （点别的标签、点进终端、切页面、新建、关闭时提交，点正在改的
+> 标签本身继续改）；方向键、Home/End、Shift 选区、`Ctrl+A` 全选，
+> 输入法与剪贴板复用 `editor()` 入口。点按定位光标暂不支持。
+> 模型层在新文件 `src/app/tab_ops.rs`（`session.rs` 已到 400 行
+> 上限，只加了 `custom_title` 字段、`display_title` 搬了过去）：
+> `Sessions::move_session`（越界/原地移动是空操作不报错，active
+> 按移动后活动会话的 id 重算）、`Session::rename` 与
+> `custom_title: Option<String>`，`display_title` 优先级是显式名
+> > 目录名回退（显式名哪怕是「终端」也照显）。移动与改名走
+> `mark_dirty` → 防抖落盘，与选会话同一条路。快照
+> `SessionSnapshot` 加 `custom_title: Option<String>`
+> （`#[serde(default)]`，老快照无此字段正常加载）；标签顺序即
+> `sessions` 向量顺序，恢复时照向量重建，不另存顺序字段。分屏
+> 不受影响：移动只改向量顺序不改 id，`active_pane` 与各标签的树
+> 都不动，有回归测试（分屏标签移位后 `session()` 仍是原焦点
+> pane）。门禁：fmt、结构检查、clippy `-D warnings`、cargo test
+> 239 通过 / 0 失败（基数 224，新增 15 个：模型层 8 个、
+> 快照 2 个、GPUI 集成 5 个，含真实鼠标拖拽与双击改名模拟）、
+> cargo build 全部通过。未验证：真实桌面上的拖拽手感与双击改名
+> 手感（无显示器 VM 上跑不了）。
 
 ## 8. P4：兼容性与工程稳定性
 
@@ -220,6 +350,39 @@ PTY 读取与 VT 解析
 - 维护 Ubuntu/Debian `.deb`、图标、桌面入口、安装与卸载验证。
 - 单元测试覆盖 VT 状态、快捷键、配置和会话快照；PTY 集成测试验证输出、退出码与 resize；桌面验收覆盖输入法及 X11/Wayland。
 
+> 2026-11-11 进展：P4 已落地。兼容性矩阵见 `docs/compat-matrix.md`：
+> OSC 133 引用 P3 测试与 `docs/shell-integration.md`（Fish 未验证）；
+> OSC 52 写接受、读拒绝、非法 base64 丢弃（`OnlyCopy`，离线与真实
+> PTY 各一测）；OSC 8 两段链接、点击位置与白名单（`javascript:` 点击
+> 被拦截并提示）；鼠标 SGR/X10 报告离线与真实 PTY 双覆盖
+> （`cat` 收到的字节精确比对，Shift 留给选区）；256 色/true color 断言
+> 帧颜色值；光标形状 DECSCUSR 1–6；宽字符补混合行光标列对齐；
+> `TERM`/`COLORTERM`/`TERM_PROGRAM`/`TERM_PROGRAM_VERSION` 真实 PTY
+> 断言为 `xterm-256color`/`truecolor`/`siskin`/`0.2.0`；resize 后
+> `stty size` 与网格行数、输出继续流动；Zsh 5.9 与 tmux 3.4（开
+> mouse 后出现 `SGR_MOUSE`）真实 PTY 验证。异常恢复：
+> shell 不存在解析失败不 panic、PTY 派生返回 Err；`kill -9 $$` 报
+> `ChildExit(None)` 不谎报 0，`exit 137` 原样报 `Some(137)`；无
+> D-Bus 时上报 `MenuState::Unavailable` 不崩溃；配置损坏整份走默认
+> 回退且不覆盖原文件、单条坏快照只丢那一条（P4 新增宽容反序列化）；
+> 窗口关闭模型层（确认/取消/关最后一会话）由已有 `tests::layout`
+> 测试覆盖。内存上限已审计成表（见矩阵文档）：历史 10,000 行、
+> 整形缓存 512 项/4 MiB、搜索 1000 条、命令记录 100 条、配置 64 KiB；
+> 事件队列与会话数是评估后保留的无界设计；`seq 1M` 实测历史恰好
+> 10,000 行、RSS 增长单跑 17.3 MiB、全套并行 31.8 MiB，上界 64 MiB。
+> 打包已验证：`scripts/build_deb.py` 打出 `siskin_0.2.0_amd64.deb`
+>（9,040,694 字节），`dpkg-deb --info/--contents` 与解包校验通过，
+> 真实 `dpkg -i --force-depends`（只缺声明依赖 `librsvg2-common`）
+> 安装成功、`dpkg -r`/`--purge` 卸载干净；`desktop-file-validate` 与
+> `lintian` 本机未装，记未验证。P4 回归还修了两个 bug：
+> X10 纯点击模式的松开曾误发一条形似按下的报告（`src/io/keys.rs`）、
+> `file://` 注释与代码不符（只改注释）；另给剪贴板写队列加了 64 条
+> 上限。门禁：fmt、结构检查、clippy `-D warnings`、cargo test
+> 269 通过 / 0 失败（基数 239，新增 30 个）、cargo build 全部通过。
+> 未验证：X11/Wayland 下的窗口呈现、字体回退、输入法、分屏/标签手感、
+> 真实桌面菜单；Fish、vim、htop（本机未装）；`fork` 层失败注入；
+> OSC 8 `http(s)` 的真实打开；GUI 基线 S1–S7 仍未测。
+
 ## 9. P5：暂缓评估的能力
 
 这些能力不进入当前性能与主力终端打磨的关键路径。等核心体验有数据支撑后，再按真实需求评估：
@@ -229,6 +392,17 @@ PTY 读取与 VT 解析
 - 更完整的会话管理和跨平台安装包。
 
 开始其中任一项前，先明确用户场景、依赖范围、安全边界和可维护成本。
+
+> 2026-11-11 进展：评估完成，未实现。评估记录见 `docs/p5-evaluation.md`：
+> 仓内现状已盘点——SSH 零代码零依赖（只靠系统 `ssh` 子程序）、
+> Kitty/Sixel 在 `alacritty_terminal 0.26.0` + `vte 0.15.0` 里被静默丢弃、
+> `Frame`/`CellView` 无图像层、会话快照只记标题与目录、
+> 安装包只有 Ubuntu/Debian `.deb` 单一路。结论：SSH 暂缓
+> （远程开发场景明确时先做外调系统 `ssh` 的最小版）、
+> Kitty 图形协议可考虑为下一轮候选第一位（只做 Kitty，不做 Sixel）、
+> 会话管理只补分屏布局恢复可考虑（不做工作区）、
+> macOS/Windows 安装包明确不建议。
+> 本次只动文档，零代码改动；门禁 cargo test 269 通过 / 0 失败。
 
 ## 10. 推荐开发顺序
 

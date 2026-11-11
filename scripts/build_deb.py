@@ -153,6 +153,10 @@ def build(skip_build: bool, output: Path) -> Path:
         stage = work / "root"
         debian = stage / "DEBIAN"
         debian.mkdir(parents=True)
+        # 环境的 umask / 父目录 setgid 位会漏进新目录（本机 umask 0007
+        # 时得到 2770），dpkg-deb 要求控制目录在 0755..0775 之间，
+        # 这里显式固定，避免构建结果随环境变化。
+        debian.chmod(0o755)
 
         target_binary = stage / f"usr/bin/{BINARY_NAME}"
         copy(binary, target_binary)
@@ -164,6 +168,9 @@ def build(skip_build: bool, output: Path) -> Path:
 
         install_icons(stage)
         install_hooks(debian)
+        for directory in stage.rglob("*"):
+            if directory.is_dir():
+                directory.chmod(0o755)
 
         doc = stage / f"usr/share/doc/{PACKAGE}"
         copy(ROOT / "README.md", doc / "README.md")
@@ -190,6 +197,15 @@ def build(skip_build: bool, output: Path) -> Path:
             encoding="utf-8",
         )
         (debian / "control").chmod(0o644)
+
+        # 与控制目录同理：数据目录也可能从环境继承 setgid/组写权限
+        # （本机各级目录都是 2770），打包前统一收成 0755，避免装
+        # 出来的目录带奇怪的权限位。位置必须在所有拷贝完成之后，
+        # 否则后建的目录又会漏网。文件本身的权限前面已逐个定好，不动。
+        stage.chmod(0o755)
+        for directory in stage.rglob("*"):
+            if directory.is_dir():
+                directory.chmod(0o755)
 
         run("dpkg-deb", "--root-owner-group", "--build", str(stage), str(artifact))
 

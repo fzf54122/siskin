@@ -10,13 +10,17 @@ mod actions;
 mod clipboard;
 mod close_ops;
 mod editor_ops;
-mod events;
+pub(crate) mod events;
 mod keys;
 mod menu_ops;
 mod palette;
+pub(crate) mod pane;
+mod pane_ops;
 mod prefs_ops;
 mod search_ops;
-mod session;
+pub(crate) mod session;
+mod shell_marks;
+mod tab_ops;
 mod terminal_ops;
 mod theme_ops;
 mod workspace_ops;
@@ -26,6 +30,7 @@ pub(crate) use close_ops::CloseRequest;
 pub(crate) use editor_ops::FontPicker;
 pub(crate) use keys::Handled;
 pub(crate) use palette::CommandPalette;
+pub(crate) use pane::{PaneDrag, SplitDirection};
 pub(crate) use search_ops::SearchState;
 pub(crate) use session::{Session, Sessions};
 
@@ -59,6 +64,18 @@ pub(crate) struct ColorEdit {
 
 pub(crate) struct SiskinApp {
     pub sessions: Sessions,
+    /// 当前聚焦的分屏叶（会话 id）。`session()` / `session_mut()`
+    /// 都指向它，键盘输入、滚动、搜索天然落在焦点 pane 上。
+    pub active_pane: u64,
+    /// 每个标签上次聚焦的叶，切换标签回来时恢复到它。
+    pub(crate) pane_focus: std::collections::HashMap<u64, u64>,
+    /// 活动标签每叶的窗口矩形。`resize_panes` 每帧按树重算，
+    /// 鼠标换算与分隔线拖动都读它，不读共享的 `grid_origin`。
+    pub(crate) pane_bounds: std::collections::HashMap<u64, Bounds<Pixels>>,
+    /// 活动标签整块终端区的窗口矩形（tab 条下方），分屏渲染的总框。
+    pub(crate) pane_area: Bounds<Pixels>,
+    /// 分隔线拖动状态；与文本选区的 `drag` 是两个字段，不共用。
+    pub(crate) pane_drag: Option<PaneDrag>,
     pub focus: FocusHandle,
     pub mono: SharedString,
     pub ui: SharedString,
@@ -92,7 +109,7 @@ pub(crate) struct SiskinApp {
     /// 会话派生失败时顶栏显示的一行提示。
     pub status: Option<String>,
     pub window_id: u64,
-    pub(crate) drag: Option<(f32, f32)>,
+    pub(crate) drag: Option<(isize, usize)>,
     /// 每个会话一条事件通道，关闭会话时按 id 移除。
     pub(crate) event_sender: Option<async_channel::Sender<(u64, VtEvent)>>,
     pub(crate) event_receiver: Option<async_channel::Receiver<(u64, VtEvent)>>,
@@ -116,6 +133,12 @@ pub(crate) struct SiskinApp {
     pub(crate) restored: Vec<crate::io::preferences::SessionSnapshot>,
     /// `Ctrl+Shift+F` 打开的搜索条。`None` 表示未打开。
     pub(crate) search: Option<SearchState>,
+    /// 标签拖拽状态（手动鼠标方案，见 `tab_ops.rs`）。
+    pub(crate) tab_drag: Option<tab_ops::TabDrag>,
+    /// 拖拽换过位后，松开那下合成的 click 要吞掉，不选标签。
+    pub(crate) tab_click_suppressed: bool,
+    /// 正在内联重命名的标签。`None` 表示没有在改名。
+    pub(crate) tab_rename: Option<tab_ops::TabRename>,
     preferences_path: Option<PathBuf>,
     preferences_loaded: bool,
 }
@@ -124,17 +147,19 @@ impl SiskinApp {
     pub fn new(cx: &mut gpui::Context<Self>) -> Self {
         let installed = cx.text_system().all_font_names();
         let mono_fonts = theme::mono_fonts(&installed);
-        let mono = mono_fonts[0].clone();
-        let ui = theme::ui_family(&installed).to_string();
         let mut settings = Settings::default();
         settings.resolve_theme(false);
-        let id = 0;
-        let sessions = Sessions::new(Session::starting(id, "终端", settings.shell));
+        let sessions = Sessions::new(Session::starting(0, "终端", settings.shell));
         Self {
             sessions,
+            active_pane: 0,
+            pane_focus: std::collections::HashMap::new(),
+            pane_bounds: std::collections::HashMap::new(),
+            pane_area: Self::initial_pane_area(),
+            pane_drag: None,
             focus: cx.focus_handle(),
-            mono: mono.into(),
-            ui: ui.into(),
+            mono: mono_fonts[0].clone().into(),
+            ui: theme::ui_family(&installed).to_string().into(),
             mono_fonts,
             palette: None,
             settings_section: SettingsSection::Appearance,
@@ -171,9 +196,20 @@ impl SiskinApp {
             dirty_since: None,
             restored: Vec::new(),
             search: None,
+            tab_drag: None,
+            tab_click_suppressed: false,
+            tab_rename: None,
             preferences_path: None,
             preferences_loaded: false,
         }
+    }
+
+    /// 首帧 `refresh_metrics` 之前的分屏总框；第一帧就会被真实视口重算。
+    fn initial_pane_area() -> Bounds<Pixels> {
+        Bounds::new(
+            gpui::point(gpui::px(0.), gpui::px(28.)),
+            gpui::size(gpui::px(1024.), gpui::px(768.)),
+        )
     }
 
     pub(crate) fn theme(&self) -> theme::Palette {
@@ -191,12 +227,19 @@ impl SiskinApp {
 
     // ---- 页面与会话 ----
 
+    /// 焦点 pane 的会话；`active_pane` 失效时退回活动标签，
+    /// 这样旧的调用点在分屏数据还没建好时也不会取到空引用。
     pub(crate) fn session(&self) -> &Session {
-        self.sessions.active()
+        match self.session_by_id(self.active_pane) {
+            Some(session) => session,
+            None => self.sessions.active(),
+        }
     }
 
     pub(crate) fn session_mut(&mut self) -> &mut Session {
-        self.sessions.active_mut()
+        // 下标在 `Sessions::focused_mut` 里按 id 校验、取不到退回活动标签，
+        // 这样旧的调用点在分屏数据还没建好时也不会取空引用。
+        self.sessions.focused_mut(self.active_pane)
     }
 
     pub(crate) fn active_index(&self) -> usize {

@@ -17,7 +17,7 @@ use crate::theme::PAPER;
 
 /// 轮询到网格里出现 `needle` 或超时。PTY 输出是异步的，固定 sleep
 /// 在慢机器上会随机失败。
-fn wait_for_output(pty: &Pty, needle: &str) -> bool {
+pub(super) fn wait_for_output(pty: &Pty, needle: &str) -> bool {
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {
         let frame = pty.frame(&AnsiColors::from_palette(&PAPER));
@@ -37,7 +37,7 @@ fn wait_for_output(pty: &Pty, needle: &str) -> bool {
     }
 }
 
-fn spawn(spec: SessionSpec) -> (Pty, async_channel::Receiver<(u64, VtEvent)>) {
+pub(super) fn spawn(spec: SessionSpec) -> (Pty, async_channel::Receiver<(u64, VtEvent)>) {
     let (sender, receiver) = async_channel::unbounded();
     let pty = Pty::spawn(
         &spec.shell,
@@ -197,4 +197,101 @@ fn a_failed_spawn_leaves_the_frame_clean() {
     assert!(!session.frame_dirty(), "派生失败的会话不该被标记为脏");
     session.refresh(&AnsiColors::from_palette(&PAPER));
     assert!(!session.frame_dirty());
+}
+
+pub(super) fn session_text(session: &crate::app::Session) -> String {
+    session
+        .frame
+        .rows
+        .iter()
+        .flat_map(|row| row.cells.iter())
+        .map(|cell| cell.text.as_str())
+        .collect()
+}
+
+/// 多次取用同一快照不重复深拷贝：两次 `frame_snapshot` 指向同一份 `Arc`。
+#[test]
+fn repeated_snapshots_share_one_frame_without_a_deep_copy() {
+    let session = crate::app::Session::starting(20, "快照会话", ShellKind::Sh);
+    let first = session.frame_snapshot();
+    let second = session.frame_snapshot();
+    assert!(
+        std::sync::Arc::ptr_eq(&first, &second),
+        "两次取用必须是同一份 Arc，不能各拷一份 Frame"
+    );
+    assert!(
+        std::sync::Arc::strong_count(&first) >= 3,
+        "会话本身 + 两次取用应共享同一 Arc"
+    );
+}
+
+/// 干净会话的 `refresh` 不替换快照：不脏就不构帧、不换指针。
+#[test]
+fn a_clean_refresh_keeps_the_same_snapshot() {
+    let palette = AnsiColors::from_palette(&PAPER);
+    let mut session = crate::app::Session::starting(22, "干净会话", ShellKind::Sh);
+    let before = session.frame_snapshot();
+    session.refresh(&palette);
+    assert!(
+        std::sync::Arc::ptr_eq(&before, &session.frame_snapshot()),
+        "干净时 refresh 不该替换 Arc"
+    );
+    assert!(!session.frame_dirty());
+}
+
+/// 刷新替换 `Arc` 而不是原地改帧：旧快照仍是刷新前的内容，
+/// 新快照才有新输出，渲染与搜索永远读不到半更新帧。
+/// 走真实 PTY，验证 `mark_output` → `refresh` 的闭环。
+#[test]
+fn refresh_swaps_the_shared_snapshot_without_touching_the_old_one() {
+    let spec = SessionSpec::command(
+        "test",
+        std::path::PathBuf::from("/bin/sh"),
+        vec![
+            "-c".into(),
+            "printf 'one'; sleep 0.5; printf 'two'; sleep 2".into(),
+        ],
+    );
+    let palette = AnsiColors::from_palette(&PAPER);
+    let mut session = crate::app::Session::starting(21, "快照会话", ShellKind::Sh);
+    let (sender, _receiver) = async_channel::unbounded();
+    session
+        .spawn_spec(&spec, sender, 0)
+        .expect("测试环境必须能派生 PTY");
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let old = loop {
+        session.mark_output();
+        session.refresh(&palette);
+        if session_text(&session).contains("one") {
+            break session.frame_snapshot();
+        }
+        if Instant::now() > deadline {
+            panic!("未读到第一段输出");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    let new = loop {
+        session.mark_output();
+        session.refresh(&palette);
+        if session_text(&session).contains("two") {
+            break session.frame_snapshot();
+        }
+        if Instant::now() > deadline {
+            panic!("未读到第二段输出");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert!(
+        !std::sync::Arc::ptr_eq(&old, &new),
+        "刷新必须替换 Arc，不能原地改旧帧"
+    );
+    let old_text: String = old
+        .rows
+        .iter()
+        .flat_map(|row| row.cells.iter())
+        .map(|cell| cell.text.as_str())
+        .collect();
+    assert!(old_text.contains("one"), "旧快照应保留刷新前的内容");
+    assert!(!old_text.contains("two"), "旧快照不能混进刷新后的输出");
+    assert!(session_text(&session).contains("two"), "新快照应有新输出");
 }

@@ -19,6 +19,7 @@ impl SiskinApp {
     }
 
     pub(crate) fn set_page(&mut self, page: Page) {
+        self.commit_tab_rename();
         self.page = page;
         self.palette = None;
         self.color_edit = None;
@@ -33,9 +34,12 @@ impl SiskinApp {
     }
 
     pub(crate) fn select_session(&mut self, index: usize) {
+        self.commit_tab_rename();
         if self.sessions.select(index) {
+            self.restore_pane_focus();
             self.search = None;
             self.drag = None;
+            self.pane_drag = None;
             self.session_scroll.scroll_to_item(index);
             self.refresh_directory(true);
             self.request_focus = true;
@@ -49,6 +53,7 @@ impl SiskinApp {
     }
 
     pub(crate) fn new_session(&mut self) {
+        self.commit_tab_rename();
         let directory = self
             .session()
             .pty()
@@ -58,6 +63,8 @@ impl SiskinApp {
         let mut session = Session::starting(id, "终端", self.settings.shell);
         session.directory = directory;
         let index = self.sessions.add(session);
+        self.active_pane = id;
+        self.pane_focus.insert(id, id);
         let _ = self.spawn_session(index);
         self.session_scroll.scroll_to_item(index);
         self.mark_dirty();

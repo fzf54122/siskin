@@ -8,6 +8,7 @@ use super::*;
 impl SiskinApp {
     pub(super) fn close_confirmation(&self, p: &Palette, cx: &mut Context<Self>) -> Stateful<Div> {
         let window = self.close_request == Some(crate::app::CloseRequest::Window);
+        let pane = matches!(self.close_request, Some(crate::app::CloseRequest::Pane(_)));
         div()
             .id("close-confirmation")
             .debug_selector(|| "close-confirmation".into())
@@ -30,6 +31,8 @@ impl SiskinApp {
                         label(
                             if window {
                                 "关闭窗口？"
+                            } else if pane {
+                                "关闭分屏？"
                             } else {
                                 "关闭会话？"
                             },

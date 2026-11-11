@@ -16,6 +16,8 @@ pub(crate) use alacritty_terminal::vte::ansi::CursorShape;
 pub(crate) use event::{ScreenSize, VtEvent, VtListener};
 #[cfg(test)]
 pub(crate) use view::CellView;
+#[cfg(test)]
+pub(crate) use view::OfflineScreen;
 pub(crate) use view::{CellStyle, CursorView, Frame, RowView, frame};
 
 use alacritty_terminal::term::TermMode;
@@ -132,5 +134,76 @@ mod tests {
         assert_eq!(size.columns(), 2);
         assert_eq!(size.screen_lines(), 1);
         assert_eq!(size.total_lines(), 101);
+    }
+
+    fn row_text(frame: &Frame, row: usize) -> String {
+        frame.rows[row]
+            .cells
+            .iter()
+            .map(|c| c.text.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn cjk_text_occupies_two_columns_and_the_next_char_follows() {
+        let mut screen = screen();
+        screen.feed("中文a".as_bytes());
+        let frame = screen.frame(&palette());
+        assert_eq!(frame.rows[0].cells[0].text, "中");
+        assert!(frame.rows[0].cells[1].spacer, "「中」的后半格必须是 spacer");
+        assert_eq!(frame.rows[0].cells[2].text, "文");
+        assert!(frame.rows[0].cells[3].spacer, "「文」的后半格必须是 spacer");
+        assert_eq!(frame.rows[0].cells[4].text, "a", "后续字符必须落在第 5 列");
+        assert_eq!(frame.cursor.column, 5, "光标应走过 2+2+1 列");
+        assert_eq!(row_text(&frame, 0).trim_end(), "中文a");
+    }
+
+    #[test]
+    fn emoji_occupies_two_columns_and_the_next_char_follows() {
+        let mut screen = screen();
+        screen.feed("😀a".as_bytes());
+        let frame = screen.frame(&palette());
+        assert_eq!(frame.rows[0].cells[0].text, "😀");
+        assert!(frame.rows[0].cells[1].spacer, "Emoji 的后半格必须是 spacer");
+        assert_eq!(frame.rows[0].cells[2].text, "a", "后续字符必须落在第 3 列");
+        assert_eq!(frame.cursor.column, 3, "光标应走过 2+1 列");
+    }
+
+    #[test]
+    fn combining_marks_stay_in_the_same_cell_as_their_base() {
+        let mut screen = screen();
+        screen.feed("e\u{301}a".as_bytes());
+        let frame = screen.frame(&palette());
+        assert_eq!(
+            frame.rows[0].cells[0].text, "e\u{301}",
+            "组合字符不能另占一格"
+        );
+        assert!(!frame.rows[0].cells[0].spacer);
+        assert_eq!(frame.rows[0].cells[1].text, "a", "后续字符必须落在第 2 列");
+        assert_eq!(frame.cursor.column, 2, "组合字符不推进光标");
+    }
+
+    #[test]
+    fn nerd_font_icons_occupy_one_column_like_other_symbols() {
+        let mut screen = screen();
+        screen.feed("\u{e0b0}a".as_bytes());
+        let frame = screen.frame(&palette());
+        assert_eq!(frame.rows[0].cells[0].text, "\u{e0b0}");
+        assert!(!frame.rows[0].cells[0].spacer, "私用区图标不应被当成宽字符");
+        assert_eq!(frame.rows[0].cells[1].text, "a", "后续字符必须落在第 2 列");
+        assert_eq!(frame.cursor.column, 2, "图标只占一列");
+    }
+
+    #[test]
+    fn mixed_width_text_keeps_cursor_and_columns_aligned() {
+        let mut screen = screen();
+        screen.feed("a中😀b".as_bytes());
+        let frame = screen.frame(&palette());
+        // 列：a=0、中=1、spacer=2、😀=3、spacer=4、b=5。
+        assert_eq!(frame.rows[0].cells[1].text, "中");
+        assert_eq!(frame.rows[0].cells[3].text, "😀");
+        assert_eq!(frame.rows[0].cells[5].text, "b");
+        assert_eq!(frame.cursor.column, 6);
+        assert_eq!(row_text(&frame, 0).trim_end(), "a中😀b");
     }
 }

@@ -119,7 +119,8 @@ impl SiskinApp {
         }
     }
 
-    /// 只记标题与 cwd，不记输出：恢复历史会让「恢复」变成伪造。
+    /// 只记标题、显式名与 cwd，不记输出：恢复历史会让「恢复」变成伪造。
+    /// 标签顺序就是 `sessions` 向量顺序，恢复时照向量重建，不另存顺序字段。
     fn session_snapshots(&self) -> Vec<SessionSnapshot> {
         self.sessions
             .iter()
@@ -127,6 +128,7 @@ impl SiskinApp {
                 SessionSnapshot::new(
                     session.title.to_string(),
                     session.pty().and_then(|pty| pty.working_directory()),
+                    session.custom_title.clone(),
                 )
             })
             .collect()

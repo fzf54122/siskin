@@ -6,18 +6,22 @@
 //! PTY 会话。派生进程、写端、读线程与 resize 都在这里，主线程只碰
 //! `write` / `resize` 和事件通道。
 //!
-//! 线程模型：`alacritty_terminal` 的 `EventLoop` 在独立线程里阻塞读，
-//! 解析结果写进 `FairMutex<Term>`；主线程只在渲染前短暂加锁，不跨 await。
+//! 线程模型：自有读线程（`super::pty_read`）阻塞读，解析结果写进
+//! `FairMutex<Term>`；主线程只在渲染前短暂加锁，不跨 await。
+//! 不用上游 `EventLoop` 只有一个原因：OSC 133 需要在解析前扫字节流
+//! 并按标记偏移锚定光标行，上游循环不给这个钩子。
 
 use std::borrow::Cow;
 use std::sync::Arc;
 
 use alacritty_terminal::Term;
-use alacritty_terminal::event_loop::{EventLoop, EventLoopSender, Msg};
 use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::TermMode;
 use alacritty_terminal::tty::{self, Options, Shell};
 
+use super::history_search::HistorySpan;
+use super::pty_channel::{PtyChannel, PtyMsg};
+use super::pty_read::spawn_reader;
 use super::vt::{ScreenSize, VtEvent, VtListener};
 use crate::domain::shell_spec::ShellSpec;
 
@@ -42,7 +46,7 @@ impl std::error::Error for PtyError {}
 /// 一个已经跑起来的 PTY。面板退出时 drop，由 Drop 关闭事件循环。
 pub(crate) struct Pty {
     terminal: Arc<FairMutex<Term<VtListener>>>,
-    sender: EventLoopSender,
+    sender: PtyChannel,
     size: ScreenSize,
     /// 子进程退出后不再接受输入，但网格仍可读，供用户回看最后输出。
     exited: bool,
@@ -50,13 +54,8 @@ pub(crate) struct Pty {
     child_pid: Option<i32>,
     /// PTY 主端 fd。`TIOCSWINSZ` 直接作用在这里，不经过事件循环队列。
     master_fd: std::os::unix::io::RawFd,
-    /// 事件循环线程。Drop 时先发 `Shutdown` 再 join，保证句柄与 PTY 都被释放。
-    reader: Option<
-        std::thread::JoinHandle<(
-            EventLoop<alacritty_terminal::tty::Pty, VtListener>,
-            alacritty_terminal::event_loop::State,
-        )>,
-    >,
+    /// 读线程。Drop 时先发 `Shutdown` 再 join，保证句柄与 PTY 都被释放。
+    reader: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Pty {
@@ -96,12 +95,10 @@ impl Pty {
             ..Default::default()
         };
         let terminal = Arc::new(FairMutex::new(Term::new(config, &size, listener.clone())));
-        let event_loop = EventLoop::new(terminal.clone(), listener, tty, true, false)
-            .map_err(PtyError::Spawn)?;
-        let sender = event_loop.channel();
-        // 必须保留 join handle：丢掉它会让线程脱离管理，drop `Pty` 后
-        // 事件循环可能仍在跑，下一次构造会与它抢同一个 PTY。
-        let reader = event_loop.spawn();
+        // 自有读线程：`EventLoop` 的行为在 `pty_read` 里逐项对齐，
+        // 多出来的只有 OSC 133 扫描与行号锚定。
+        let (sender, reader) =
+            spawn_reader(terminal.clone(), listener, tty).map_err(PtyError::Spawn)?;
 
         Ok(Self {
             terminal,
@@ -123,8 +120,8 @@ impl Pty {
         if self.exited || bytes.is_empty() {
             return;
         }
-        if let Err(error) = self.sender.send(Msg::Input(Cow::Owned(bytes.to_vec()))) {
-            eprintln!("siskin: 无法写入终端：{error}");
+        if !self.sender.send(PtyMsg::Input(Cow::Owned(bytes.to_vec()))) {
+            eprintln!("siskin: 无法写入终端：读线程已退出");
         }
     }
 
@@ -167,6 +164,28 @@ impl Pty {
         self.terminal
             .lock()
             .scroll_display(alacritty_terminal::grid::Scroll::Delta(delta));
+    }
+
+    /// 当前滚动偏移（帧顶相对可视区首行）。命令跳转用它算目标行。
+    pub(crate) fn display_offset(&self) -> usize {
+        self.terminal.lock().grid().display_offset()
+    }
+
+    /// 滚动区里的行数。命令跳转用它把稳定行号换回绝对行。
+    pub(crate) fn history_size(&self) -> usize {
+        use alacritty_terminal::grid::Dimensions;
+        self.terminal.lock().history_size()
+    }
+
+    /// 锁内扫完整 scrollback（含历史行），一次返回全部匹配。
+    /// 无效正则返回构建错误文案，不抛错、不清空调用方状态。
+    pub(crate) fn search_history(
+        &self,
+        query: &str,
+        case_sensitive: bool,
+        regex: bool,
+    ) -> Result<Vec<HistorySpan>, String> {
+        super::history_search::search_history(&self.terminal.lock(), query, case_sensitive, regex)
     }
 
     /// 子进程工作目录。Linux 下读 `/proc/<pid>/cwd`，失败返回 `None`
@@ -258,9 +277,9 @@ fn set_window_size(fd: std::os::unix::io::RawFd, size: ScreenSize) -> std::io::R
 
 impl Drop for Pty {
     fn drop(&mut self) {
-        // 事件循环收到 Shutdown 后会关闭 PTY 主端，子进程随之收到 SIGHUP。
+        // 读线程收到 Shutdown 后退出并释放 PTY，子进程随之收到 SIGHUP。
         // 先发消息再 join：顺序反了会让 join 永久阻塞在 poll 上。
-        let _ = self.sender.send(Msg::Shutdown);
+        let _ = self.sender.send(PtyMsg::Shutdown);
         if let Some(reader) = self.reader.take() {
             let _ = reader.join();
         }

@@ -16,6 +16,7 @@ mod preview;
 mod settings;
 mod sidebar;
 mod terminal;
+mod terminal_mouse;
 mod widgets;
 mod workspace;
 
@@ -169,8 +170,12 @@ impl SiskinApp {
         let height = viewport.height.as_f32() - TAB_BAR_HEIGHT;
         self.metrics =
             crate::domain::RenderMetrics::new(cell_width, line_height, self.font_size(), PADDING);
-        let columns = self.metrics.columns(width);
-        let rows = self.metrics.rows(height);
-        self.resize_grid(columns, rows);
+        // 终端区是 tab 条下方整块；每叶的行列按它在树里的矩形分别算，
+        // 由 `resize_panes` 一并记下叶矩形并通知各会话的 PTY。
+        let area = gpui::Bounds::new(
+            gpui::point(gpui::px(0.), gpui::px(TAB_BAR_HEIGHT)),
+            gpui::size(gpui::px(width), gpui::px(height)),
+        );
+        self.resize_panes(area);
     }
 }

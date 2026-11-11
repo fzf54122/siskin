@@ -21,13 +21,19 @@ impl SiskinApp {
             .as_ref()
             .map(|edit| &edit.draft)
             .or_else(|| self.font_picker.as_ref().map(|picker| &picker.query))
+            // 标签重命名共用同一套输入法与剪贴板入口：
+            // `keys.rs` 的 rename_stage 排在 color_edit_stage 之前，
+            // 改名打开时按键不会落到这里的取色/字体分支。
+            .or_else(|| self.tab_rename.as_ref().map(|rename| &rename.edit))
     }
 
     pub(crate) fn editor_mut(&mut self) -> Option<&mut TextEdit> {
         if let Some(edit) = self.color_edit.as_mut() {
             Some(&mut edit.draft)
+        } else if let Some(picker) = self.font_picker.as_mut() {
+            Some(&mut picker.query)
         } else {
-            self.font_picker.as_mut().map(|picker| &mut picker.query)
+            self.tab_rename.as_mut().map(|rename| &mut rename.edit)
         }
     }
 

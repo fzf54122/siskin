@@ -6,6 +6,8 @@
 //! 网格渲染的入参打包。参数有十几个，逐个位置传容易错位，
 //! 打包后 `TerminalGrid` 只在 `new` 时读一次。
 
+use std::sync::Arc;
+
 use gpui::{Entity, FocusHandle, SharedString};
 
 use crate::domain::RenderMetrics;
@@ -16,7 +18,8 @@ use super::{CursorSlot, OriginSlot, TerminalGrid};
 
 /// 渲染一帧需要的全部输入。
 pub(crate) struct GridInputs {
-    pub frame: Frame,
+    /// 共享快照：与会话、搜索同一份 `Arc`，构造时只克隆指针。
+    pub frame: Arc<Frame>,
     /// 渲染时的亚行平移（像素）。不足一行的滚轮余量靠它补连续。
     pub offset_y: f32,
     pub metrics: RenderMetrics,

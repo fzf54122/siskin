@@ -35,13 +35,24 @@ impl Action {
             Action::ToggleInspector => app.toggle_inspector(),
             Action::NextSession => app.cycle_session(true),
             Action::PreviousSession => app.cycle_session(false),
+            Action::SplitHorizontal => app.split_pane(crate::app::SplitDirection::Horizontal),
+            Action::SplitVertical => app.split_pane(crate::app::SplitDirection::Vertical),
+            Action::FocusNextPane => app.focus_pane_cycle(true),
+            Action::FocusPrevPane => app.focus_pane_cycle(false),
+            Action::ClosePane => {
+                let id = app.active_pane;
+                app.close_pane(id)
+            }
             Action::SetShell(kind) => app.set_shell(kind),
             Action::ScrollPageUp => app.scroll_page(true),
             Action::ScrollPageDown => app.scroll_page(false),
             Action::ScrollToTop => app.scroll_to_top(),
             Action::ScrollToBottom => app.scroll_to_bottom(),
+            Action::NextCommand => app.jump_command(true),
+            Action::PreviousCommand => app.jump_command(false),
             Action::OpenSearch => app.open_search(),
             Action::TogglePerf => app.toggle_perf(),
+            Action::RenameSession => app.rename_active_tab(),
         }
         app.sync_menu();
         ActionEffect::Redraw
@@ -58,7 +69,63 @@ pub(crate) struct PaletteEntry {
     pub action: Action,
 }
 
-pub(crate) static PALETTE_ENTRIES: [PaletteEntry; 13] = [
+pub(crate) static PALETTE_ENTRIES: [PaletteEntry; 21] = [
+    PaletteEntry {
+        label: "重命名当前标签",
+        keywords: "rename tab session title 重命名 标签 改名",
+        hint: "双击标签也可重命名；回车确认，Esc 取消，清空恢复默认名",
+        keys: "",
+        action: Action::RenameSession,
+    },
+    PaletteEntry {
+        label: "下一个命令",
+        keywords: "next command shell jump osc133",
+        hint: "跳到下一条命令的起始行（需 shell 发 OSC 133 标记）",
+        keys: "Ctrl Shift Down",
+        action: Action::NextCommand,
+    },
+    PaletteEntry {
+        label: "上一个命令",
+        keywords: "previous command shell jump osc133",
+        hint: "跳到上一条命令的起始行（需 shell 发 OSC 133 标记）",
+        keys: "Ctrl Shift Up",
+        action: Action::PreviousCommand,
+    },
+    PaletteEntry {
+        label: "向下分屏",
+        keywords: "split pane horizontal below down",
+        hint: "上下分屏，新 pane 在下方",
+        keys: "Ctrl Shift D",
+        action: Action::SplitHorizontal,
+    },
+    PaletteEntry {
+        label: "向右分屏",
+        keywords: "split pane vertical right",
+        hint: "左右分屏，新 pane 在右方",
+        keys: "Ctrl Shift R",
+        action: Action::SplitVertical,
+    },
+    PaletteEntry {
+        label: "下一个分屏",
+        keywords: "next pane focus split",
+        hint: "焦点移到下一个 pane",
+        keys: "Ctrl Shift J",
+        action: Action::FocusNextPane,
+    },
+    PaletteEntry {
+        label: "上一个分屏",
+        keywords: "previous pane focus split",
+        hint: "焦点移到上一个 pane",
+        keys: "Ctrl Shift K",
+        action: Action::FocusPrevPane,
+    },
+    PaletteEntry {
+        label: "关闭当前分屏",
+        keywords: "close pane split kill",
+        hint: "只关当前 pane，留一个时关整个标签",
+        keys: "Ctrl Shift Q",
+        action: Action::ClosePane,
+    },
     PaletteEntry {
         label: "新建会话",
         keywords: "new session tab open",

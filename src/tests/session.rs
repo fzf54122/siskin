@@ -101,6 +101,23 @@ fn session_ids_survive_close_and_add() {
     assert!(set.position(ids[0]).is_some());
 }
 
+#[test]
+fn focused_mut_returns_the_session_for_an_id_and_the_active_one_for_unknown_ids() {
+    let mut set = sessions(3);
+    assert_eq!(set.focused_mut(2).id, 2);
+    // `sessions(3)` 里每次 add 都把活动会话切到新会话，未知 id
+    // 退回的是当前活动会话（id 2），不是第 0 个。
+    assert_eq!(set.focused_mut(99).id, 2);
+    set.select(1);
+    assert_eq!(set.focused_mut(99).id, 1);
+    // 取到的就是仓储里的会话本身，改动直接落到它上面。
+    set.focused_mut(2).title = "改名".into();
+    assert_eq!(
+        set.get(2).map(|session| session.title.to_string()),
+        Some("改名".into())
+    );
+}
+
 /// 平滑滚动的行为契约。这些是回归护栏：把 `scroll_pixels` 改回
 /// 「直接取整成行」或「每次都调 PTY」都会在这里挂掉。
 #[test]

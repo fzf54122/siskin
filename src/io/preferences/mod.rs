@@ -39,7 +39,9 @@ pub(crate) struct Preferences {
     pub font_family: Option<String>,
     pub font_size: f32,
     pub shell: ShellKind,
-    /// 上次关闭时的会话快照，用于「恢复上次会话」。
+    /// 上次关闭时的会话快照，用于「恢复上次会话」。单条损坏时只丢
+    /// 那一条（见 `de_lenient_sessions`），不让整份配置失效。
+    #[serde(default, deserialize_with = "de_lenient_sessions")]
     pub sessions: Vec<SessionSnapshot>,
 }
 
@@ -55,6 +57,21 @@ impl Default for Preferences {
             sessions: Vec::new(),
         }
     }
+}
+
+/// 快照数组的宽容反序列化：逐条解析，坏条目直接丢掉，好条目保留。
+/// 快照是追加写的使用记录，一条被手改坏了不该连累主题、字体、shell
+/// 选择与其它会话；整段根本不是数组时仍按错误返回，走整份配置的
+/// 回退路径（`load_preferences` 用默认值启动并保留原文件）。
+fn de_lenient_sessions<'de, D>(deserializer: D) -> Result<Vec<SessionSnapshot>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let values = <Vec<serde_json::Value> as serde::Deserialize>::deserialize(deserializer)?;
+    Ok(values
+        .into_iter()
+        .filter_map(|value| serde_json::from_value::<SessionSnapshot>(value).ok())
+        .collect())
 }
 
 impl Preferences {

@@ -196,3 +196,32 @@ fn repeated_shaping_of_the_same_text_hits_the_cache(cx: &mut gpui::TestAppContex
     });
     assert_eq!(cache.entries.len(), 10);
 }
+
+/// 键变化必须走未命中、不能复用旧字形。这条走真实整形路径：
+/// 同文本改前景色、字号、字体族各一次，命中数不动、未命中数加一。
+/// scale 变化在测试窗口里改不了，由键不等式测试覆盖。
+#[gpui::test]
+fn key_changes_miss_the_cache_instead_of_reusing_stale_shapes(cx: &mut gpui::TestAppContext) {
+    let (_, cx) = cx.add_window_view(|_, _| TestAnchor);
+    let family: SharedString = "monospace".into();
+    let mut cache = ShapeCache::new();
+    cx.update(|window, _| {
+        let _ = cache.line(&family, "same", style(false), 13., window);
+        assert_eq!(cache.stats(), (0, 1), "首次整形必须未命中");
+        let _ = cache.line(&family, "same", style(false), 13., window);
+        assert_eq!(cache.stats(), (1, 1), "同样输入必须命中");
+        let colored = CellStyle {
+            fg: 0x000000,
+            ..style(false)
+        };
+        let _ = cache.line(&family, "same", colored, 13., window);
+        assert_eq!(cache.stats(), (1, 2), "改前景色不能复用旧字形");
+        let _ = cache.line(&family, "same", style(false), 14., window);
+        assert_eq!(cache.stats(), (1, 3), "改字号不能复用旧字形");
+        let _ = cache.line(&"other".into(), "same", style(false), 13., window);
+        assert_eq!(cache.stats(), (1, 4), "改字体族不能复用旧字形");
+        let _ = cache.line(&family, "same", style(false), 13., window);
+        assert_eq!(cache.stats(), (2, 4), "回到原输入必须再次命中");
+        assert_eq!(cache.entries.len(), 4, "四个不同键应各占一条");
+    });
+}

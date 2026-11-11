@@ -9,6 +9,8 @@
 use alacritty_terminal::event::{Event, EventListener, WindowSize};
 use alacritty_terminal::grid::Dimensions;
 
+use crate::domain::shell_marks::{Osc133Mark, ShellMark};
+
 /// 终端上报给应用的事件。
 #[derive(Clone)]
 pub(crate) enum VtEvent {
@@ -21,6 +23,9 @@ pub(crate) enum VtEvent {
     PtyWrite(String),
     ChildExit(Option<i32>),
     Exit,
+    /// OSC 133 标记，带标记到达时刻的稳定行号（从会话第一行起算的
+    /// 单调行计数，跳转时用当前 `history_size` 换回绝对行）。
+    ShellMark(ShellMark),
 }
 
 impl std::fmt::Debug for VtEvent {
@@ -36,6 +41,9 @@ impl std::fmt::Debug for VtEvent {
             VtEvent::PtyWrite(_) => write!(formatter, "PtyWrite"),
             VtEvent::ChildExit(code) => write!(formatter, "ChildExit({code:?})"),
             VtEvent::Exit => write!(formatter, "Exit"),
+            VtEvent::ShellMark(mark) => {
+                write!(formatter, "ShellMark(line {}, {:?})", mark.line, mark.mark)
+            }
         }
     }
 }
@@ -54,6 +62,12 @@ impl VtListener {
     fn emit(&self, event: VtEvent) {
         // 接收端消失意味着应用正在退出，此时丢弃事件是正确行为。
         let _ = self.sender.try_send((self.session, event));
+    }
+
+    /// 读线程专用：OSC 133 标记不是上游 `Event`，不走 `send_event`，
+    /// 直接按同一个通道发回应用层。
+    pub(crate) fn shell_mark(&self, line: i32, mark: Osc133Mark) {
+        self.emit(VtEvent::ShellMark(ShellMark::new(line, mark)));
     }
 }
 

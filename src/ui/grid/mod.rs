@@ -19,6 +19,9 @@ mod paint;
 mod runs;
 mod shape;
 
+#[cfg(test)]
+mod selection_tests;
+
 pub(crate) use inputs::GridInputs;
 
 use std::sync::{Arc, Mutex};
@@ -60,7 +63,8 @@ pub(crate) type CursorSlot = Arc<Mutex<Option<Bounds<Pixels>>>>;
 pub(crate) type OriginSlot = Arc<Mutex<Option<Point<Pixels>>>>;
 
 pub(crate) struct TerminalGrid {
-    frame: Frame,
+    /// 共享快照：只读，`prepaint` 与 `paint` 读同一份，不会读到半更新帧。
+    frame: Arc<Frame>,
     /// 亚行平移。整帧同向移动，所以 prepaint 里统一加到原点上。
     offset_y: f32,
     metrics: RenderMetrics,
@@ -299,10 +303,21 @@ impl IntoElement for TerminalGrid {
 
 /// 一行的连续选区列区间。相邻的选中格子合成一段，`end` 右开。
 /// 合并让一次绘制任务覆盖整段选区，80 列全选从 80 个矩形降到 1 个。
+/// 宽字符的后半格（spacer）属于前一个字：前一格选中时它也必须进段，
+/// 否则选区矩形只盖住宽字符的一半，留出缺口；单独出现的已选 spacer
+/// 同样成段，不丢高亮。
 pub(crate) fn selection_ranges(line: &crate::io::vt::RowView) -> Vec<(usize, usize)> {
     let mut ranges: Vec<(usize, usize)> = Vec::new();
     let mut run: Option<(usize, usize)> = None;
     for (column, cell) in line.cells.iter().enumerate() {
+        if cell.spacer {
+            match run {
+                Some((start, _)) => run = Some((start, column)),
+                None if cell.selected => run = Some((column, column)),
+                None => {}
+            }
+            continue;
+        }
         if cell.selected {
             run = Some(match run {
                 Some((start, _)) => (start, column),

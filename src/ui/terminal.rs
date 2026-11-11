@@ -10,26 +10,59 @@
 
 use super::grid::{CursorSlot, GridInputs};
 use super::*;
-use gpui::{CursorStyle, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ScrollDelta, ScrollEvent};
+use crate::io::search::MatchSpan;
+use gpui::{CursorStyle, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ScrollEvent};
 use std::sync::Arc;
 
 impl SiskinApp {
+    /// 终端页：按活动标签的分屏树递归生成多个 `terminal_body`，
+    /// 单叶时与以前一样只是一张卡片。分隔线拖动挂在页根上，
+    /// 指针离开分隔线本身仍能收到移动事件，松开即结束。
     pub(super) fn terminal_page(&self, p: &Palette, cx: &mut Context<Self>) -> Div {
+        let tree = self.active_tab_tree();
+        let area = self.pane_area;
         div()
             .size_full()
             .flex()
             .flex_col()
-            .child(self.terminal_body(p, cx))
+            .on_mouse_move(cx.listener(|app, event: &MouseMoveEvent, _, cx| {
+                if app.pane_drag.is_some() {
+                    app.update_pane_drag(event.position);
+                    cx.notify();
+                }
+            }))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|app, _: &MouseUpEvent, _, cx| {
+                    if app.pane_drag.is_some() {
+                        app.end_pane_drag();
+                        cx.notify();
+                    }
+                }),
+            )
+            .child(self.pane_node(&tree, area, p, cx))
     }
 
     fn cursor_slot(&self) -> CursorSlot {
         Arc::clone(&self.cursor_slot)
     }
 
-    fn terminal_body(&self, p: &Palette, cx: &mut Context<Self>) -> Stateful<Div> {
-        let scrolled = self.session().frame.display_offset > 0;
+    /// 一张终端卡片，现在按会话 id 参数化：分屏后每叶一张，
+    /// 帧、滚动、选区、搜索高亮都取该叶自己的会话。搜索条只画在
+    /// 焦点 pane 上，光标也只在焦点 pane 里是实色。
+    pub(super) fn terminal_body(
+        &self,
+        session_id: u64,
+        p: &Palette,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let Some(session) = self.session_by_id(session_id) else {
+            return div().id(("terminal-card", session_id)).flex_1().min_h_0();
+        };
+        let scrolled = session.frame.display_offset > 0;
+        let focused = session_id == self.active_pane;
         div()
-            .id("terminal-card")
+            .id(("terminal-card", session_id))
             .debug_selector(|| "terminal-card".into())
             .relative()
             .flex_1()
@@ -37,9 +70,9 @@ impl SiskinApp {
             .flex()
             .flex_col()
             .bg(rgb(p.terminal))
-            .child(self.mouse_target(cx))
-            .child(self.grid_layer(p, scrolled, cx))
-            .when(self.search.is_some(), |view| {
+            .child(self.mouse_target(session_id, cx))
+            .child(self.grid_layer(session_id, p, scrolled, cx))
+            .when(focused && self.search.is_some(), |view| {
                 view.child(self.search_bar(p, cx))
             })
     }
@@ -70,6 +103,8 @@ impl SiskinApp {
             .text_color(rgb(p.ink))
             .child(label("›", p.accent))
             .child(label(text, p.ink))
+            .child(self.search_toggle("search-case", "Aa", p, cx, true))
+            .child(self.search_toggle("search-regex", ".*", p, cx, false))
             .child(
                 div()
                     .id("search-next")
@@ -96,26 +131,88 @@ impl SiskinApp {
             )
     }
 
-    /// 鼠标事件挂在整张卡片上：网格铺满卡片，坐标换算的基准也是卡片原点。
-    fn mouse_target(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+    /// 当前帧的搜索高亮（绝对行换算成可见行），只画在焦点 pane 上。
+    /// 注意这里不能复用 `grid_layer` 里的 `focused`：搜索条打开时它
+    /// 为假（光标要变暗），但高亮必须照常显示，否则边打字边看不到匹配。
+    fn search_spans(&self, session_id: u64) -> (Vec<MatchSpan>, Option<MatchSpan>) {
+        if session_id != self.active_pane {
+            return (Vec::new(), None);
+        }
+        let Some(session) = self.session_by_id(session_id) else {
+            return (Vec::new(), None);
+        };
+        let Some(state) = self.search.as_ref() else {
+            return (Vec::new(), None);
+        };
+        let offset = session.frame.display_offset;
+        let rows = session.frame.rows.len();
+        (
+            state.visible_spans(offset, rows),
+            state.current_visible_span(offset, rows),
+        )
+    }
+
+    /// 搜索条里的大小写 / 正则开关。激活时用强调色，点一下即切换并重算。
+    fn search_toggle(
+        &self,
+        id: &'static str,
+        text: &'static str,
+        p: &Palette,
+        cx: &mut Context<Self>,
+        is_case: bool,
+    ) -> Stateful<Div> {
+        let active = self
+            .search
+            .as_ref()
+            .map(|state| {
+                if is_case {
+                    state.case_sensitive
+                } else {
+                    state.regex
+                }
+            })
+            .unwrap_or(false);
         div()
-            .id("terminal-mouse")
+            .id(id)
+            .debug_selector(move || id.into())
+            .px(px(6.))
+            .cursor_pointer()
+            .text_color(rgb(if active { p.accent } else { p.ink }))
+            .on_click(cx.listener(move |app, _, _, cx| {
+                if is_case {
+                    app.toggle_search_case();
+                } else {
+                    app.toggle_search_regex();
+                }
+                cx.notify();
+            }))
+            .child(text)
+    }
+
+    /// 鼠标事件挂在整张卡片上：网格铺满卡片，坐标换算的基准也是卡片原点。
+    /// 每个回调都先按本叶 id 换算行列；左键按下会先把焦点切到本叶，
+    /// 再走原来的链接 → 鼠标上报 → 本地拖选顺序。
+    fn mouse_target(&self, session_id: u64, cx: &mut Context<Self>) -> Stateful<Div> {
+        div()
+            .id(("terminal-mouse", session_id))
             .absolute()
             .inset_0()
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|app, event: &MouseDownEvent, window, cx| {
+                cx.listener(move |app, event: &MouseDownEvent, window, cx| {
                     // 先拿焦点，再处理点击，否则 `Ctrl+Click` 后输入法仍指向别的控件。
+                    // 点进终端也是重命名编辑框失焦：先提交，再走点击。
+                    app.commit_tab_rename();
                     app.focus.focus(window, cx);
-                    app.press_left(event);
+                    app.press_left(session_id, event);
                     cx.notify();
                 }),
             )
             .on_mouse_down(
                 MouseButton::Middle,
-                cx.listener(|app, event: &MouseDownEvent, _, cx| {
-                    let (row, column) = app.cell_at(event.position);
-                    if !app.forward_mouse(row, column, 1, true, false) {
+                cx.listener(move |app, event: &MouseDownEvent, _, cx| {
+                    let (row, column) = app.cell_at(session_id, event.position);
+                    if !app.forward_mouse(session_id, row, column, 1, true, false) {
                         app.paste_primary(cx);
                     }
                     cx.notify();
@@ -123,36 +220,64 @@ impl SiskinApp {
             )
             .on_mouse_up(
                 MouseButton::Right,
-                cx.listener(|app, event: &MouseUpEvent, _, cx| {
-                    let (row, column) = app.cell_at(event.position);
-                    app.forward_mouse(row, column, 2, false, event.modifiers.shift);
+                cx.listener(move |app, event: &MouseUpEvent, _, cx| {
+                    let (row, column) = app.cell_at(session_id, event.position);
+                    app.forward_mouse(session_id, row, column, 2, false, event.modifiers.shift);
                     cx.notify();
                 }),
             )
-            .on_mouse_move(cx.listener(|app, event: &MouseMoveEvent, _, cx| {
-                app.drag_to(event.position);
-                cx.notify();
+            .on_mouse_move(cx.listener(move |app, event: &MouseMoveEvent, _, cx| {
+                // 无变化的纯移动不通知：拖选端点没动格、鼠标上报没发出时，
+                // 重绘只会白跑一帧。上报路径本身不受影响。
+                if app.drag_to(session_id, event.position) {
+                    cx.notify();
+                }
             }))
             .on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|app, _: &MouseUpEvent, _, cx| {
-                    app.release_left();
+                cx.listener(move |app, _: &MouseUpEvent, _, cx| {
+                    app.release_left(session_id);
                     cx.notify();
                 }),
             )
-            .on_scroll(cx.listener(|app, event: &ScrollEvent, _, cx| {
-                app.scroll_wheel(event);
+            .on_scroll(cx.listener(move |app, event: &ScrollEvent, _, cx| {
+                app.scroll_wheel(session_id, event);
                 cx.notify();
                 cx.stop_propagation();
             }))
     }
 
-    fn grid_layer(&self, p: &Palette, scrolled: bool, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn grid_layer(
+        &self,
+        session_id: u64,
+        p: &Palette,
+        scrolled: bool,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
         // 亚行偏移：滚轮位移里不足一行的部分，渲染时整帧平移到这个位置。
         // 鼠标换算用同一个值补偿，点击不会错行。
-        let sub = self.session().sub_pixel_offset(self.row_height());
+        let Some(session) = self.session_by_id(session_id) else {
+            return div().id(("terminal-grid", session_id)).flex_1();
+        };
+        let sub = session.sub_pixel_offset(self.row_height());
+        let focused = session_id == self.active_pane
+            && self.page == Page::Terminal
+            && self.palette.is_none()
+            && self.search.is_none()
+            && self.close_request.is_none();
+        // 只有焦点 pane 写共享的光标/原点槽：非焦点 pane 写进去会
+        // 抢走输入法候选框锚点，丢弃的槽每帧新建一次即可。
+        let (cursor_slot, origin_slot) = if focused {
+            (self.cursor_slot(), Arc::clone(&self.grid_origin))
+        } else {
+            (
+                Arc::new(std::sync::Mutex::new(None)),
+                Arc::new(std::sync::Mutex::new(None)),
+            )
+        };
+        let (highlights, current_match) = self.search_spans(session_id);
         div()
-            .id("terminal-grid")
+            .id(("terminal-grid", session_id))
             .debug_selector(|| "terminal-grid".into())
             .relative()
             .flex_1()
@@ -161,7 +286,7 @@ impl SiskinApp {
             .cursor(CursorStyle::IBeam)
             .child(
                 GridInputs {
-                    frame: self.session().frame.clone(),
+                    frame: session.frame_snapshot(),
                     offset_y: sub,
                     metrics: self.metrics,
                     font: self.font(),
@@ -170,20 +295,13 @@ impl SiskinApp {
                     selection_bg: p.tint,
                     highlight_bg: p.warn,
                     match_bg: p.warn,
-                    highlights: self
-                        .search
-                        .as_ref()
-                        .map(|state| state.matches.clone())
-                        .unwrap_or_default(),
-                    current_match: self.search.as_ref().and_then(|state| state.current_span()),
+                    highlights,
+                    current_match,
                     cursor: p.accent,
                     link: p.path,
-                    focused: self.page == Page::Terminal
-                        && self.palette.is_none()
-                        && self.search.is_none()
-                        && self.close_request.is_none(),
-                    cursor_slot: self.cursor_slot(),
-                    origin_slot: Arc::clone(&self.grid_origin),
+                    focused,
+                    cursor_slot,
+                    origin_slot,
                     view: cx.entity(),
                     focus: self.focus.clone(),
                 }
@@ -191,13 +309,18 @@ impl SiskinApp {
                 .debug_selector("terminal-grid-canvas"),
             )
             .when(scrolled, |view| {
-                view.child(self.scroll_bottom_button(p, cx))
+                view.child(self.scroll_bottom_button(session_id, p, cx))
             })
     }
 
-    fn scroll_bottom_button(&self, p: &Palette, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn scroll_bottom_button(
+        &self,
+        session_id: u64,
+        p: &Palette,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
         div()
-            .id("scroll-bottom")
+            .id(("scroll-bottom", session_id))
             .debug_selector(|| "scroll-bottom".into())
             .absolute()
             .bottom(px(16.))
@@ -211,87 +334,13 @@ impl SiskinApp {
             .text_size(px(12.))
             .text_color(rgb(p.ink))
             .cursor_pointer()
-            .on_click(cx.listener(|app, _, _, cx| {
+            .on_click(cx.listener(move |app, _, _, cx| {
+                app.focus_pane(session_id);
                 app.scroll_to_bottom();
                 let colors = app.ansi();
                 app.session_mut().refresh(&colors);
                 cx.notify();
             }))
             .child("回到底部 ↓")
-    }
-
-    /// 左键按下：`Ctrl+Click` 打开链接 → 鼠标上报 → 本地拖选。
-    fn press_left(&mut self, event: &MouseDownEvent) {
-        let (row, column) = self.cell_at(event.position);
-        if event.modifiers.secondary() && self.open_link_at(row, column) {
-            return;
-        }
-        if self.forward_mouse(row, column, 0, true, event.modifiers.shift) {
-            return;
-        }
-        self.drag = Some((row as f32, column as f32));
-        self.session_mut().clear_selection();
-        self.session_mut().select(row, column);
-    }
-
-    /// 拖动中延长选区；没有按下时把移动事件转成鼠标上报。
-    fn drag_to(&mut self, position: gpui::Point<gpui::Pixels>) {
-        let (row, column) = self.cell_at(position);
-        if self.drag.is_some() {
-            self.session_mut().update_selection(row, column);
-            return;
-        }
-        self.forward_mouse(row, column, 3, true, false);
-    }
-
-    fn release_left(&mut self) {
-        if self.drag.take().is_some() {
-            self.copy_selection_to_primary();
-        }
-    }
-
-    /// 滚轮按像素滚动。位移攒进会话的亚行余量，凑满一行才真正
-    /// 滚一格，不足的部分交给渲染层平移，所以看起来是连续的。
-    fn scroll_wheel(&mut self, event: &ScrollEvent) {
-        let pixels = match event.delta {
-            ScrollDelta::Lines(values) => values.y * self.row_height(),
-            ScrollDelta::Pixels(values) => values.y.as_f32(),
-        };
-        if pixels == 0. {
-            return;
-        }
-        let row_height = self.row_height();
-        if self.session_mut().scroll_pixels(pixels, row_height) {
-            let colors = self.ansi();
-            self.session_mut().refresh(&colors);
-        }
-    }
-
-    /// 把窗口坐标换算成网格行列。越界值夹到网格边界，拖选不会越出网格。
-    fn cell_at(&self, position: gpui::Point<gpui::Pixels>) -> (isize, usize) {
-        let origin = self
-            .grid_origin
-            .lock()
-            .ok()
-            .and_then(|origin| *origin)
-            .unwrap_or_else(|| gpui::point(px(0.), px(0.)));
-        let relative = position - origin;
-        let column = (relative.x.as_f32() / self.metrics.cell_width)
-            .floor()
-            .max(0.) as usize;
-        let row = (relative.y.as_f32() / self.metrics.row_height)
-            .floor()
-            .max(0.) as isize;
-        (row, column.min(self.session().columns.saturating_sub(1)))
-    }
-
-    /// 拖选结束后把选区同步到 PRIMARY，中键粘贴就能用。
-    fn copy_selection_to_primary(&mut self) {
-        let Some(text) = self.session().selection_text() else {
-            return;
-        };
-        if !text.is_empty() {
-            self.primary_queue.push(text);
-        }
     }
 }

@@ -198,8 +198,11 @@ pub(crate) fn mouse_report(
     if control {
         code |= 16;
     }
-    if !pressed && !modes.mouse_drag {
+    if !pressed && !modes.mouse_drag && !modes.mouse_motion && !modes.sgr_mouse {
         // 普通点击模式下只上报按下，松开交给应用自己判断。
+        // X10 编码没有松开位，直接上报会看起来像又按了一次。
+        // SGR 模式除外：它用 M/m 区分按下与松开，松开必须上报。
+        return None;
     } else if !pressed {
         code |= 3;
     }

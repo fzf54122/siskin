@@ -67,8 +67,9 @@ pub(crate) enum Handled {
 
 type KeyStage = fn(&mut SiskinApp, KeyPress<'_>) -> Option<Handled>;
 
-const STAGES: [KeyStage; 7] = [
+const STAGES: [KeyStage; 8] = [
     close_stage,
+    rename_stage,
     color_edit_stage,
     search_stage,
     palette_stage,
@@ -85,7 +86,15 @@ impl SiskinApp {
     }
 }
 
-/// 取色输入框必须排在最前，否则 `Ctrl+A` 会被当成终端动作。
+/// 标签重命名打开时接管全部按键，回车/Tab 提交，Esc 取消，
+/// 其余进 `TextEdit`；与取色输入框一样，打开时全局快捷键不抢键。
+fn rename_stage(app: &mut SiskinApp, press: KeyPress<'_>) -> Option<Handled> {
+    app.tab_rename.as_ref()?;
+    app.rename_key(&press);
+    Some(Handled::Redraw)
+}
+
+/// 取色输入框排在重命名之后、终端之前，否则 `Ctrl+A` 会被当成终端动作。
 fn color_edit_stage(app: &mut SiskinApp, press: KeyPress<'_>) -> Option<Handled> {
     app.editor()?;
     app.edit_key(&press);
@@ -101,6 +110,7 @@ fn close_stage(app: &mut SiskinApp, press: KeyPress<'_>) -> Option<Handled> {
 }
 
 /// 搜索条打开时接管字符输入，`Esc` 关闭，`Enter` 跳到下一个匹配。
+/// `Alt+C` 切大小写、`Alt+R` 切正则（大小写键与正则键不进查询词）。
 fn search_stage(app: &mut SiskinApp, press: KeyPress<'_>) -> Option<Handled> {
     app.search.as_ref()?;
     match press.key {
@@ -109,6 +119,8 @@ fn search_stage(app: &mut SiskinApp, press: KeyPress<'_>) -> Option<Handled> {
         "up" => app.step_match(false),
         "down" => app.step_match(true),
         "backspace" => app.search_backspace(),
+        "c" if press.alt && !press.control => app.toggle_search_case(),
+        "r" if press.alt && !press.control => app.toggle_search_regex(),
         _ => {
             if press.modified() {
                 return None;
@@ -155,6 +167,13 @@ fn shortcut_stage(app: &mut SiskinApp, press: KeyPress<'_>) -> Option<Handled> {
         (true, true, "f") => Action::OpenSearch,
         (true, true, "n") => Action::NewSession,
         (true, true, "w") => Action::CloseSession,
+        (true, true, "d") => Action::SplitHorizontal,
+        (true, true, "r") => Action::SplitVertical,
+        (true, true, "j") => Action::FocusNextPane,
+        (true, true, "k") => Action::FocusPrevPane,
+        (true, true, "q") => Action::ClosePane,
+        (true, true, "down") => Action::NextCommand,
+        (true, true, "up") => Action::PreviousCommand,
         (true, false, "=") | (true, false, "+") => Action::FontLarger,
         (true, false, "-") => Action::FontSmaller,
         (true, false, "tab") => Action::NextSession,
@@ -207,9 +226,15 @@ fn terminal_stage(app: &mut SiskinApp, press: KeyPress<'_>) -> Option<Handled> {
     if !app.session().is_running() {
         // 进程已退出：Enter 关闭会话，最后一个交给窗口退出，
         // 其它按键不再下发，避免写进一个没有读者的 PTY。
+        // 多叶时只关焦点 pane，标签里其它 pane 不受影响。
         if press.key == "enter" {
-            let index = app.active_index();
-            app.close_session(index);
+            if app.pane_leaf_count() > 1 {
+                let id = app.active_pane;
+                app.close_pane(id);
+            } else {
+                let index = app.active_index();
+                app.close_session(index);
+            }
             return Some(Handled::Redraw);
         }
         return None;

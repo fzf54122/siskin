@@ -6,10 +6,13 @@
 //! 会话仓储。每个会话持有一个真实 PTY，`SiskinApp` 只调这里的方法，
 //! 不直接索引 `Vec`，窗口关闭由应用层处理。
 
+use std::sync::Arc;
+
 use gpui::SharedString;
 
 use crate::domain::SessionSpec;
 use crate::domain::session::SessionState;
+use crate::domain::shell_marks::CommandLog;
 use crate::domain::shell_spec::ShellKind;
 use crate::io::ansi::AnsiColors;
 use crate::io::pty::Pty;
@@ -23,6 +26,9 @@ pub(crate) const SCROLLBACK_LINES: usize = 10_000;
 pub(crate) struct Session {
     pub id: u64,
     pub title: SharedString,
+    /// 用户显式改的名。`None` 表示没改过，`display_title` 才回退到目录名；
+    /// 有值时哪怕是「终端」也照显，不再被目录名覆盖。
+    pub custom_title: Option<String>,
     pub kind: ShellKind,
     pub state: SessionState,
     pub directory: Option<std::path::PathBuf>,
@@ -30,13 +36,18 @@ pub(crate) struct Session {
     pty: Option<Pty>,
     /// IME 预编辑串。只有提交时才写入 PTY。
     pub marked: Option<String>,
-    pub frame: Frame,
+    /// 共享快照：`Frame` 不可变，渲染与搜索各持一份 `Arc` 指向同一帧，
+    /// 不再每次深拷贝行与 cell；替换只是换指针，旧快照仍完整可读。
+    pub frame: Arc<Frame>,
     pub columns: usize,
     pub rows: usize,
+    pub panes: crate::app::pane::PaneTree, // 分屏树：叶指向会话 id，初始单叶是自身。
     /// 平滑滚动的亚行余量。整行由 PTY 持有，余量只活在渲染层。
     pub scroll_offset: crate::domain::ScrollOffset,
     /// 最近一轮事件是否有输出。只在有 PTY 时置位，见 `mark_output`。
     frame_dirty: bool,
+    /// OSC 133 命令记录：每会话独立，上限 100 条。无标记时全空是合法态。
+    pub shell_marks: CommandLog,
 }
 
 impl Session {
@@ -44,17 +55,20 @@ impl Session {
         Self {
             id,
             title: title.into(),
+            custom_title: None,
             kind,
             state: SessionState::Starting,
             directory: std::env::current_dir().ok(),
             window_title: None,
             pty: None,
             marked: None,
-            frame: Frame::empty(INITIAL_ROWS),
+            frame: Arc::new(Frame::empty(INITIAL_ROWS)),
             columns: INITIAL_COLUMNS,
             rows: INITIAL_ROWS,
+            panes: crate::app::pane::PaneTree::leaf(id),
             scroll_offset: crate::domain::ScrollOffset::default(),
             frame_dirty: false,
+            shell_marks: CommandLog::new(),
         }
     }
 
@@ -96,21 +110,6 @@ impl Session {
         self.state.is_running() && self.pty.is_some()
     }
 
-    pub(crate) fn display_title(&self) -> String {
-        // 会话名优先跟随工作目录，`vim`/`ssh` 改 OSC 标题时标签保持稳定；
-        // 目录名与显式会话名相同（如 `siskin`）时也一样。
-        if let Some(name) = self.directory.as_ref().and_then(|path| path.file_name()) {
-            let name = name.to_string_lossy();
-            if self.title.as_ref() == name.as_ref()
-                || self.title.as_ref() == "终端"
-                || self.title.starts_with("会话 ")
-            {
-                return name.into_owned();
-            }
-        }
-        self.title.to_string()
-    }
-
     pub(crate) fn pty(&self) -> Option<&Pty> {
         self.pty.as_ref()
     }
@@ -129,13 +128,23 @@ impl Session {
 
     /// 构帧耗时由调用方记进 P0 采样。没有 PTY 时返回零时长，
     /// 不把「没会话」算成一次昂贵的空帧。
+    /// 只在脏时替换 `Arc`：干净会话跳过构帧，旧快照仍可读；
+    /// 替换只是换指针，渲染与搜索手里的旧 `Arc` 不受影响，
+    /// 因此永远读不到半更新帧。
     pub(crate) fn refresh(&mut self, colors: &AnsiColors) -> std::time::Duration {
         let started = std::time::Instant::now();
-        if let Some(pty) = self.pty.as_ref() {
-            self.frame = pty.frame(colors);
+        if self.frame_dirty
+            && let Some(pty) = self.pty.as_ref()
+        {
+            self.frame = Arc::new(pty.frame(colors));
             self.frame_dirty = false;
         }
         started.elapsed()
+    }
+
+    /// 共享快照：渲染与搜索拿同一份 `Arc`，不重复深拷贝整帧。
+    pub(crate) fn frame_snapshot(&self) -> Arc<Frame> {
+        Arc::clone(&self.frame)
     }
 
     /// 从 PTY 收到输出后调用。构帧由事件轮次的 `refresh` 统一做，
@@ -181,6 +190,16 @@ impl Session {
             pty.scroll(delta);
             self.frame_dirty = true;
         }
+    }
+
+    /// 当前滚动偏移（帧顶相对可视区首行）。命令跳转用它算目标行。
+    pub(crate) fn display_offset(&self) -> Option<usize> {
+        self.pty.as_ref().map(Pty::display_offset)
+    }
+
+    /// 滚动区里的行数。命令跳转用它把稳定行号换回绝对行。
+    pub(crate) fn history_size(&self) -> Option<usize> {
+        self.pty.as_ref().map(Pty::history_size)
     }
 
     /// 平滑滚动入口。像素位移先攒进亚行余量，凑满一行才提交给 PTY；
@@ -229,9 +248,11 @@ impl Session {
 }
 
 /// 会话集合。保证至少有一个会话，active 始终指向有效下标。
+/// `items` / `active` 对 crate 内开放：标签拖拽换位（`tab_ops.rs`）
+/// 需要按 id 重算 active，`session.rs` 已到 400 行上限，不再往里加方法。
 pub(crate) struct Sessions {
-    items: Vec<Session>,
-    active: usize,
+    pub(crate) items: Vec<Session>,
+    pub(crate) active: usize,
     next_id: u64,
 }
 
@@ -265,6 +286,19 @@ impl Sessions {
 
     pub(crate) fn active_mut(&mut self) -> &mut Session {
         &mut self.items[self.active]
+    }
+
+    /// 按 id 取可变会话；id 不在仓储里时退回活动标签。
+    /// 下标先经 `position` 校验，再直接索引 `items`：两支是同一处
+    /// 索引的不同下标，借用检查能证明它们互斥；方法调用版的
+    /// `get_mut` / `active_mut` 条件重借用在 NLL 下证不出来。
+    pub(crate) fn focused_mut(&mut self, id: u64) -> &mut Session {
+        let index = self.position(id).unwrap_or(self.active);
+        if index < self.items.len() {
+            &mut self.items[index]
+        } else {
+            &mut self.items[self.active]
+        }
     }
 
     pub(crate) fn get(&self, index: usize) -> Option<&Session> {
@@ -344,23 +378,6 @@ mod tests {
     }
 
     #[test]
-    fn closing_a_session_keeps_the_active_index_valid() {
-        let mut set = sessions(3);
-        set.select(1);
-        set.close(0);
-        assert_eq!(set.len(), 2);
-        assert_eq!(set.active_index(), 0);
-    }
-
-    #[test]
-    fn the_last_session_is_left_for_the_window_to_close() {
-        let mut set = sessions(1);
-        assert!(!set.close(0));
-        assert_eq!(set.len(), 1);
-        assert_eq!(set.active_index(), 0);
-    }
-
-    #[test]
     fn cycling_wraps_in_both_directions() {
         let mut set = sessions(3);
         set.select(0);
@@ -369,16 +386,5 @@ mod tests {
         set.cycle(true);
         assert_eq!(set.active_index(), 0);
         assert!(!set.select(9));
-    }
-
-    #[test]
-    fn session_ids_stay_unique_across_add_and_close() {
-        let mut set = sessions(2);
-        let id = set.next_id();
-        set.add(Session::starting(id, "新会话", ShellKind::Bash));
-        set.close(0);
-        let ids: Vec<u64> = set.iter().map(|(_, session)| session.id).collect();
-        assert_eq!(ids.len(), 2);
-        assert_ne!(ids[0], ids[1]);
     }
 }
